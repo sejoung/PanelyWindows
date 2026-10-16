@@ -244,8 +244,22 @@ public sealed partial class TranslationFeature : ITranslationFeature, IDisposabl
         QueueStateChanged();
     }
 
+    private readonly HashSet<(string BookKey, string Target)> _languageProblemShown = [];
+
     private void OnJobChanged(TranslationJobInfo info)
     {
+        // 원어를 알 수 없거나 번역할 언어와 같아 멈췄으면, 원문 언어 칸이 강조된 패널을 한 번 열어 바로 고를 수 있게 한다
+        if (_book is not null && info.Book.BookKey == _book.BookKey && info.Phase == TranslationPhase.Failed
+            && (info.Reason == TranslationStopReason.CouldNotDetectLanguage || (info.Reason == TranslationStopReason.UnsupportedPair && info.Source == info.Target))
+            && _languageProblemShown.Add((info.Book.BookKey, info.Target)))
+        {
+            _ui.BeginInvoke(() => { if (_panelPopup?.IsOpen != true && _host?.OwnerWindow.IsActive == true) ShowPanel(); });
+        }
+        else if (info.Phase is not TranslationPhase.Failed)
+        {
+            _languageProblemShown.Remove((info.Book.BookKey, info.Target));
+        }
+
         if (_book is not null && info.Book.BookKey == _book.BookKey && info.Source is { } src && _source != src)
         {
             _source = src;
@@ -424,6 +438,15 @@ public sealed partial class TranslationFeature : ITranslationFeature, IDisposabl
     internal int CompletedPages(string language) => _completedSets.TryGetValue(language, out var s) ? s.Count : 0;
     internal TranslationScope Scope => CurrentScope;
     internal string Preferred => PreferredTarget();
+
+    /// <summary>
+    /// Windows에서 OCR 언어를 새로 설치했을 수 있으니 엔진 목록을 다시 읽는다(패널을 열 때·"다시 확인").
+    /// </summary>
+    internal void RecheckTextRecognition()
+    {
+        (Service.Providers.Recognizer as WindowsOcrRecognizer)?.Refresh();
+        RequestStateRefresh();
+    }
 
     internal void SetBookLanguage(string? language)
     {

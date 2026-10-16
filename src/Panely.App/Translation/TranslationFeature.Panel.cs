@@ -23,6 +23,7 @@ public sealed partial class TranslationFeature
     {
         if (!IsEnabled || _host is null) return;
         if (_panelPopup?.IsOpen == true) { _panelPopup.IsOpen = false; return; }
+        (Service.Providers.Recognizer as WindowsOcrRecognizer)?.Refresh();
         var anchor = _host.TranslationButtonAnchor;
         _panelPopup = new Popup
         {

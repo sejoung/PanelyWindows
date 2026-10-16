@@ -51,6 +51,44 @@ public static class Scripts
     /// 원문 언어 자체 문자가 있는가. 일본어 kana/han, 중국어 han, 한국어 hangul, 영어 ASCII 알파벳 2개 이상.
     /// 없으면 잡음으로 버린다.
     /// </summary>
+    /// <summary>
+    /// OCR이 다른 언어 글자나 그림을 억지로 읽은 뒤섞인 결과인가. 예: 한국어 OCR이 세로 일본어를 ",가들十수덯t•i/"로 읽음.
+    /// 글자(한글·한자·가나·라틴)가 4개 이상인데 그 언어 자체 문자 비율이 60% 미만이면 잡음으로 본다.
+    /// 짧은 줄("뭐?!", "OK")과 영어는 건드리지 않는다.
+    /// </summary>
+    public static bool LooksLikeMixedGarbage(string text, string language)
+    {
+        if (language == TranslationLanguages.English) return false;
+        int letters = 0, own = 0;
+        foreach (var c in text)
+        {
+            var hangul = IsHangul(c);
+            var kana = IsKana(c);
+            var han = IsHan(c);
+            var latin = IsAsciiLetter(c);
+            if (!(hangul || kana || han || latin)) continue;
+            letters++;
+            if (language switch
+            {
+                TranslationLanguages.Korean => hangul,
+                TranslationLanguages.Japanese => kana || han,
+                _ => han,
+            }) own++;
+        }
+        return letters >= 4 && own < letters * 0.6;
+    }
+
+    /// <summary>
+    /// 일본어 조사 한 글자만 있는 줄(に, は, を …): 대사로 혼자 쓰이지 않으며 탐지 상자 잡음에서 나온다.
+    /// 그대로 번역하면 번역 모델이 반복 출력을 내기 쉽다.
+    /// </summary>
+    public static bool IsLoneParticle(string text, string language)
+    {
+        if (language != TranslationLanguages.Japanese) return false;
+        var letters = text.Where(c => !char.IsWhiteSpace(c) && !char.IsPunctuation(c) && !char.IsSymbol(c)).ToList();
+        return letters.Count == 1 && "にはをがのでとへもや".Contains(letters[0]);
+    }
+
     public static bool HasOwnScript(string text, string language)
     {
         switch (language)

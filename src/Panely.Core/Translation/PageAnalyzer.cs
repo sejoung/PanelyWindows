@@ -10,8 +10,13 @@ namespace Panely.Core.Translation;
 public sealed class PageAnalyzer
 {
     /// <summary>Windows 분석 규칙 버전(캐시 identity). 그룹/필터/OCR 규칙을 바꾸면 올린다.</summary>
-    /// <summary>2: 배경 flat 판정을 다중 고리·표본 비율 방식으로 변경(이전 캐시는 다시 분석).</summary>
-    public const int AnalysisVersion = 2;
+    /// <summary>
+    /// 2: 배경 flat 판정을 다중 고리·표본 비율 방식으로 변경.
+    /// 3: 다른 언어를 억지로 읽은 뒤섞인 OCR 결과를 풍선에서 제외.
+    /// 4: 만화 OCR(manga-ocr/PP-OCRv5)로 탐지 글자 상자 단위 인식.
+    /// 5: 탐지된 말풍선 안의 배경 flat 판정 완화(이전 캐시는 다시 분석).
+    /// </summary>
+    public const int AnalysisVersion = 5;
     private const int MaxConcurrentRereads = 2;
 
     private readonly ITextRecognizer _recognizer;
@@ -29,10 +34,13 @@ public sealed class PageAnalyzer
         if (_detector.Capability.IsReady)
             detections = await _detector.DetectAsync(image, cancellationToken).ConfigureAwait(false);
 
-        var regions = (await _recognizer.RecognizeAsync(image, language, null, cancellationToken).ConfigureAwait(false)).ToList();
+        var textBoxes = detections?.Where(d => d.IsTextBox).Select(d => d.Rect).ToList() ?? [];
+        // 만화 OCR(manga-ocr/PP-OCR)은 탐지한 글자 상자를 통째로 읽는 편이 정확하고 빠르다
+        var regionMode = textBoxes.Count > 0 && _recognizer is IRegionTextRecognizer r && r.PrefersRegions(language);
+        var regions = (await _recognizer.RecognizeAsync(image, language, regionMode ? textBoxes : null, cancellationToken).ConfigureAwait(false)).ToList();
 
-        // 탐지 text box는 있는데 OCR이 비어 있으면 crop을 확대해 재인식
-        if (detections is { Count: > 0 })
+        // 탐지 text box는 있는데 OCR이 비어 있으면 crop을 확대해 재인식(전체 페이지 OCR일 때)
+        if (!regionMode && detections is { Count: > 0 })
         {
             var empty = detections.Where(d => d.IsTextBox && !regions.Any(r => r.Rect.CoveredBy(d.Rect) >= 0.5 || d.Rect.CoveredBy(r.Rect) >= 0.5))
                 .Select(d => d.Rect).ToList();
@@ -91,6 +99,8 @@ public static class BackgroundSampler
     public const double UniformShare = 0.85;
     /// <summary>표본이 배경 톤과 같다고 보는 채널 평균 차이.</summary>
     public const double SameToneDistance = 0.06;
+    /// <summary>탐지된 말풍선 안에서의 flat 판정 비율(반투명·그라데이션 풍선 허용).</summary>
+    public const double BalloonUniformShare = 0.75;
 
     /// <returns>배경 톤과 balloonRect 중앙 66%를 덮어도 안전한지(추가 잉크 비율 ≤ .03).</returns>
     public static (BubbleBackground Background, bool BalloonSafe) Sample(PagePixels image, RectD rect, double glyph, RectD? balloonRect)
@@ -120,9 +130,13 @@ public static class BackgroundSampler
         if (near.Count == 0) near = samples;
         var mr = near.Average(s => s.R); var mg = near.Average(s => s.G); var mb = near.Average(s => s.B);
         // 배경 톤에 가까운 표본 비율로 flat을 판단한다. 글자 획·외곽선 몇 점 때문에 흰 풍선을 그림 위로 오판하지 않게 한다.
-        var sameTone = samples.Count(s => (Math.Abs(s.R - mr) + Math.Abs(s.G - mg) + Math.Abs(s.B - mb)) / 3 < SameToneDistance);
+        // 탐지기가 찾은 말풍선 안이면 반투명·그라데이션 풍선(웹툰에 흔함)의 완만한 색 변화를 허용한다.
+        var inBalloon = balloonRect is { IsEmpty: false };
+        var distance = inBalloon ? SameToneDistance * 2 : SameToneDistance;
+        var share = inBalloon ? BalloonUniformShare : UniformShare;
+        var sameTone = samples.Count(s => (Math.Abs(s.R - mr) + Math.Abs(s.G - mg) + Math.Abs(s.B - mb)) / 3 < distance);
         var nearDeviation = Math.Sqrt(near.Average(s => ((s.R - mr) * (s.R - mr) + (s.G - mg) * (s.G - mg) + (s.B - mb) * (s.B - mb)) / 3));
-        var uniform = sameTone >= samples.Count * UniformShare && nearDeviation < UniformThreshold;
+        var uniform = sameTone >= samples.Count * share && nearDeviation < (inBalloon ? UniformThreshold * 2 : UniformThreshold);
         var background = new BubbleBackground(Math.Round(mr, 4), Math.Round(mg, 4), Math.Round(mb, 4), uniform);
 
         var safe = false;

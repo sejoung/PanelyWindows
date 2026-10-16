@@ -38,6 +38,8 @@ public static class PatchGeometry
 {
     public const double PaddingFraction = 0.3;
     public const double BalloonInteriorShare = 0.66;
+    /// <summary>원문 rect를 한 patch로 묶는 최소 겹침(작은 rect 면적 대비).</summary>
+    public const double MergeOverlap = 0.2;
     public const double ArtworkAlpha = 0.92;
     public const double MinFont = 6;
     public const double FontPrecision = 0.5;
@@ -87,11 +89,19 @@ public static class PatchGeometry
         var n = items.Count;
         var parent = Enumerable.Range(0, n).ToArray();
         int Find(int x) { while (parent[x] != x) x = parent[x] = parent[parent[x]]; return x; }
+        // 원문 rect가 실제로 겹칠 때만 한 patch로 묶는다. 모서리만 스치는 정도(작은 rect의 20% 이하)는 따로 둔다
+        // (탐지 상자처럼 여백이 있는 rect가 살짝 겹쳐 서로 다른 대사가 합쳐지지 않게).
         for (var i = 0; i < n; i++)
             for (var j = i + 1; j < n; j++)
-                if (items[i].Rect.Intersects(items[j].Rect)) parent[Find(i)] = Find(j);
+                if (items[i].Rect.OverlapOfSmaller(items[j].Rect) > MergeOverlap) parent[Find(i)] = Find(j);
 
         var groups = Enumerable.Range(0, n).GroupBy(Find).Select(g => g.Select(i => items[i]).OrderBy(s => s.Id).ToList()).ToList();
+
+        // 한 말풍선 안에 글자 상자가 여럿이면(두 갈래 풍선 등) 각자 풍선 중앙 66%로 넓히면 서로 겹쳐 버린다.
+        // 그런 풍선은 글자 rect + padding만 쓴다.
+        var sharedBalloons = items.Where(s => s.BalloonRect is not null).GroupBy(s => s.BalloonRect!.Value)
+            .Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet();
+        RectD? BalloonFor(PatchSource s) => s.BalloonRect is { } b && sharedBalloons.Contains(b) ? null : s.BalloonRect;
 
         var originals = new List<RectD>();
         var patches = new List<RectD>();
@@ -99,7 +109,7 @@ public static class PatchGeometry
         {
             var original = g.Aggregate(new RectD(0, 0, 0, 0), (acc, s) => acc.Union(s.Rect));
             var patch = g.Aggregate(new RectD(0, 0, 0, 0), (acc, s) =>
-                acc.Union(PatchRect(s.Rect, s.GlyphSize, s.IsVertical, s.Background.IsUniform, s.BalloonRect, pageWidth)));
+                acc.Union(PatchRect(s.Rect, s.GlyphSize, s.IsVertical, s.Background.IsUniform, BalloonFor(s), pageWidth)));
             originals.Add(original);
             patches.Add(patch);
         }

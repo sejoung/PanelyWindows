@@ -39,6 +39,18 @@
   <ItemGroup>
     <!-- Decode fallback for clean PCs whose WIC lacks HEIC/HEIF/WebP codecs (Apache-2.0). -->
     <PackageReference Include="Magick.NET-Q8-AnyCPU" Version="15.0.0" />
+    <!-- GPU 추론(DirectML 실행 공급자)용 재배포 DirectML.dll. ONNX Runtime DirectML 패키지가 의존하는 버전과 맞춘다. -->
+    <PackageReference Include="Microsoft.AI.DirectML" Version="1.15.4" ExcludeAssets="build" GeneratePathProperty="true" />
+  </ItemGroup>
+
+  <!--
+    Microsoft.AI.DirectML의 build 타깃은 PlatformTarget이 x64/ARM64일 때만 DirectML.dll을 복사한다(이 앱은 AnyCPU로 빌드).
+    복사가 없으면 Windows 시스템의 DirectML.dll을 쓰게 되는데, 오래된 PC에서는 ONNX Runtime 요구 버전보다 낮을 수 있다.
+    그래서 게시 대상(RuntimeIdentifier)에 맞는 DirectML.dll을 앱 폴더에 직접 넣는다. RID가 없으면(개발 빌드) x64.
+  -->
+  <ItemGroup>
+    <None Include="$(PkgMicrosoft_AI_DirectML)\bin\arm64-win\DirectML.dll" Condition="'$(RuntimeIdentifier)' == 'win-arm64'" Link="DirectML.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Visible="false" />
+    <None Include="$(PkgMicrosoft_AI_DirectML)\bin\x64-win\DirectML.dll" Condition="'$(RuntimeIdentifier)' != 'win-arm64'" Link="DirectML.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Visible="false" />
   </ItemGroup>
 
 </Project>

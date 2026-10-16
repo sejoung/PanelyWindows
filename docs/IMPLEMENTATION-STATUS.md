@@ -32,7 +32,7 @@
 | SET-01 | 설정 5개 탭(일반/라이브러리/저장 공간/진단/실험적 기능) | R | — |
 | DIAG-01 | 로그 수준, 768KiB→384KiB trim, 진단 ZIP(3파일), 경로 축약, 로그 삭제 | T | — |
 | TR-01 | 기본 꺼짐, 언어팩 manifest(revision·sha256 고정), 다운로드→체크섬→설치, Fast/Accurate | T, R | 앱 안 다운로드 UI로 실제 600MB+ 다운로드는 하지 않음(같은 파일을 직접 받아 설치 폴더에 두고 확인) |
-| TR-02 | ONNX 말풍선 탐지 + Windows OCR, 타일링, 효과음 제외, 세로 strip 밴드, 점진 표시 | T, R(영어→한국어) | Windows OCR은 세로쓰기 일본어/중국어에 약함. 이 PC에 일본어·중국어 OCR 언어팩이 없어 ja/zh 실측 못 함 |
+| TR-02 | 말풍선 탐지(RT-DETR ONNX, GPU) → 일본어 manga-ocr(상자 단위, 세로쓰기 포함) / 중국어·영어·한국어 PP-OCRv5(줄 탐지+CTC), 효과음·잡음 제외, 세로 strip 밴드, 점진 표시. Windows OCR은 모델이 없을 때만 대체 | T, R(일본어 세로 웹툰·영어·한국어 페이지를 실제 모델로 인식) | 중국어 세로쓰기 실측 없음. manga-ocr도 오인식이 있음(예: "このお導きにどある") |
 | TR-03 | 원본/번역 전환, 여러 대상 언어, 시리즈 stem 일괄, 전역 1개 작업 큐·우선순위 | T | 큐는 앱 종료 시 사라짐(명세 허용, 완료 쪽 캐시는 유지) |
 | TR-04 | 배경 톤 패치, 흑풍선 흰 글씨, 풍선 팝오버 | T, R | **말투 맞춤은 미구현(사유 표시)**: 검증된 Windows 로컬 대체 모델이 없음 |
 | TR-05 | 번역/원문 수정, 숨김, 추가, 되돌리기, 페이지/책 재번역 | T, R(편집 모드 진입) | 편집 UI의 개별 동작(드래그 추가 등)은 손으로 다 눌러 보지 않음 |
@@ -44,11 +44,24 @@
 
 | 모델 | 상태 |
 |---|---|
-| 말풍선 탐지 `detector.onnx` (Apache-2.0) | revision·sha256 고정. CPU 실행 확인. 이 export의 출력은 명세의 Core ML 계약과 다르며(`labels/scores/boxes`, 절대 xyxy, `orig_target_sizes` 입력), manifest `boxFormat: postprocessed-xyxy`로 처리함 |
-| 번역 M2M100-418M Fast (int8) | revision·sha256 고정. ja/en→ko 실행 확인. 품질은 골든 세트로 검수하지 않음(예: "Are you hungry?" → "당신은 굶주린가요?") |
-| 번역 M2M100-418M Accurate (fp32, 약 2.5GB) | Hub LFS 해시로 고정만 함. 다운로드·실행하지 않음 |
+| 말풍선 탐지 `detector.onnx` (Apache-2.0) | revision·sha256 고정. 이 export의 출력은 명세의 Core ML 계약과 다르며(`labels/scores/boxes`, 절대 xyxy, `orig_target_sizes` 입력) manifest `boxFormat: postprocessed-xyxy`로 처리 |
+| 일본어 OCR manga-ocr int8 (Apache-2.0) | revision·sha256 고정(comic-translate 등록값과 일치). 세평유(일본어 세로 웹툰)에서 세로 대사 인식 확인 |
+| PP-OCRv5 mobile 탐지 + ch/en/korean 인식 (Apache-2.0) | revision·sha256 고정. 영어·한국어 페이지 인식, 언어 감지(ja/en/ko 각 1건) 확인 |
+| 번역 M2M100-418M Fast (int8, KV 캐시 merged decoder) | revision·sha256 고정. 말풍선 묶음 배치 + KV 캐시로 12줄 36초 → 1.6초. 품질은 골든 세트로 검수하지 않음(예: "お兄ちゃん、" → "형제 자매,") |
+| 번역 M2M100-418M Accurate (fp32 merged decoder) | Hub LFS 해시로 고정만 함. 내려받아 실행하지 않음 |
 | 말투 보정 | 없음. 설정에 사유와 함께 비활성 표시 |
-| zh-Hans / zh-Hant | M2M100은 `zh` 하나라 간체/번체를 구분하지 않음 |
+| zh-Hans / zh-Hant | M2M100은 `zh` 하나라 간체/번체를 구분하지 않음. 모델 기반 감지도 간체로 보고함 |
+
+### 처리 장치와 속도(이 PC 실측, 웹툰 12쪽/말풍선 12개, 세션 생성 포함)
+
+| 단계 | GPU (DirectML) | CPU | 기본 |
+|---|---|---|---|
+| 말풍선 탐지 RT-DETR fp32 | 2.1초 | 5.4초 | GPU |
+| manga-ocr int8 | 3.8초 | 0.9초 | CPU |
+| PP-OCR mobile | 1.0~1.6초 | 0.6초 | CPU |
+| M2M100 int8 번역 | 세션 생성 중 네이티브 충돌(0xC0000005) | 1.6초(KV 캐시·배치) | CPU |
+
+준비 후 한 쪽당 약 0.3초(탐지+OCR) + 0.5~0.8초(번역)입니다. `PANELY_ORT_DEVICE=cpu`로 GPU를 끌 수 있습니다. GPU는 DirectX 12 GPU면 제조사와 상관없이 DirectML로 쓰고, 실패하면 CPU로 돌아갑니다. 앱에 재배포용 `DirectML.dll` 1.15.4를 함께 넣습니다.
 
 ## 알려진 차이·개선 후보
 

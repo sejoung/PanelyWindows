@@ -174,7 +174,8 @@ public sealed class LanguagePackManager : ILanguagePackProvider
         if (source == target || !TranslationLanguages.IsSupported(source) || !TranslationLanguages.IsSupported(target))
             return Capability.Unavailable(Loc.T("This language pair isn't supported"));
         var ocr = _recognizer.GetCapability(source);
-        if (ocr.Status == CapabilityStatus.Unavailable) return ocr;
+        // 글자 인식 팩이 없으면(다운로드 필요·불가) 번역 모델이 있어도 바로 실행할 수 없다
+        if (!ocr.IsReady) return ocr;
         var pack = TranslatorPackFor(mode);
         if (_store.DownloadProgress(pack) is { } p) return new Capability(CapabilityStatus.Downloading, null, p);
         return _translator.GetCapability(source, target, mode);
@@ -186,6 +187,9 @@ public sealed class LanguagePackManager : ILanguagePackProvider
         var pack = TranslatorPackFor(mode);
         if (_store.Find(pack) is { } m && m.IsVerified && !_store.IsInstalled(m)) missing.Add(pack);
         if (_store.Find(ModelCatalog.DetectorId) is { } d && d.IsVerified && !_store.IsInstalled(d)) missing.Add(ModelCatalog.DetectorId);
+        // 만화 OCR 팩(일본어 manga-ocr + PP-OCR, 그 외 PP-OCR). PP-OCR은 언어 감지에도 쓴다.
+        foreach (var id in ModelTextRecognizer.PacksFor(source))
+            if (_store.Find(id) is { } o && o.IsVerified && !_store.IsInstalled(o) && !missing.Contains(id)) missing.Add(id);
         return missing;
     }
 

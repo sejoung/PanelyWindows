@@ -118,7 +118,7 @@ public class ModelManifestTests
     [Fact]
     public void BuiltInManifestsArePinnedButNotInstalledByDefault()
     {
-        Assert.Equal(3, ModelCatalog.BuiltIn.Count);
+        Assert.Equal(5, ModelCatalog.BuiltIn.Count);
         Assert.All(ModelCatalog.BuiltIn, m =>
         {
             Assert.Null(m.VerificationProblem());

@@ -28,7 +28,7 @@ public static class BalloonGrouper
         {
             var text = Scripts.Normalize(r.Text);
             if (TranslationLanguages.IsCjkVertical(language)) text = Scripts.RemoveCjkSpaces(text);
-            if (text.Length == 0 || !Scripts.HasOwnScript(text, language)) continue;
+            if (text.Length == 0 || !Scripts.HasOwnScript(text, language) || Scripts.LooksLikeMixedGarbage(text, language) || Scripts.IsLoneParticle(text, language)) continue;
             if (r.Rect.IsEmpty) continue;
             regions.Add(r with { Text = text });
         }

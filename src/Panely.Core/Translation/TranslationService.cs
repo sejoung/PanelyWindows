@@ -41,10 +41,11 @@ public sealed class TranslationService : IAsyncDisposable
 
     public static TranslationProviders CreateDefaultProviders(ModelStore models)
     {
-        var ocr = new WindowsOcrRecognizer();
+        var windowsOcr = new WindowsOcrRecognizer();
         var dev = DeveloperProviders.Enabled;
         ITranslator translator = dev ? new PseudoTranslator() : new M2M100Translator(models);
-        ITextRecognizer recognizer = dev ? new PseudoRecognizer(ocr) : ocr;
+        // 만화 OCR 모델(manga-ocr/PP-OCRv5)이 기본, Windows OCR은 모델 manifest가 없을 때의 대체
+        ITextRecognizer recognizer = dev ? new PseudoRecognizer(windowsOcr) : new ModelTextRecognizer(models, windowsOcr);
         return new TranslationProviders
         {
             Recognizer = recognizer,
@@ -62,6 +63,7 @@ public sealed class TranslationService : IAsyncDisposable
         await Scheduler.DisposeAsync().ConfigureAwait(false);
         (Providers.Translator as IDisposable)?.Dispose();
         (Providers.Detector as IDisposable)?.Dispose();
+        (Providers.Recognizer as IDisposable)?.Dispose();
     }
 }
 

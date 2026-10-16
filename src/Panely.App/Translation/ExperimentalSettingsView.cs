@@ -96,12 +96,22 @@ internal sealed class ExperimentalSettingsView : UserControl
         _root.Children.Add(Gap(Ui.Section(Loc.T("Language Packs")), 18));
         foreach (var m in service.Models.Manifests)
             _root.Children.Add(PackRow(m));
-        _root.Children.Add(Gap(Ui.Section(Loc.T("Text recognition (Windows OCR)")), 14));
+        _root.Children.Add(Gap(Ui.Section(Loc.T("Text recognition")), 14));
+        var models = service.Providers.Recognizer as ModelTextRecognizer;
         foreach (var lang in TranslationLanguages.All)
         {
             var cap = service.Providers.Recognizer.GetCapability(lang);
-            _root.Children.Add(Gap(Ui.Caption($"{Loc.LanguageName(lang)} — {(cap.IsReady ? Loc.T("Installed") : cap.Reason)}"), 4));
+            var engine = lang == TranslationLanguages.Japanese ? "manga-ocr" : "PP-OCRv5";
+            var engineState = models?.IsModelReady(lang) == true ? $"{engine} · {Loc.T("Installed")}"
+                : cap.IsReady ? Loc.T("Windows OCR (fallback)")
+                : cap.Reason ?? Loc.T("Language pack not installed");
+            _root.Children.Add(Gap(Ui.Caption($"{Loc.LanguageName(lang)} — {engineState}"), 4));
         }
+        // 가속: 실측 결과에 따라 말풍선 탐지만 GPU(DirectML)를 쓰고, int8 OCR·번역은 CPU가 더 빨랐다
+        var gpu = OnnxSessions.GpuDisabledByUser ? Loc.T("off (PANELY_ORT_DEVICE=cpu)")
+            : OnnxSessions.GpuFailure is { } failure ? Loc.T("unavailable: %@", failure)
+            : "DirectML";
+        _root.Children.Add(Gap(Ui.Caption(Loc.T("GPU acceleration: balloon detection uses the GPU (%@). Text recognition and translation run on the CPU, which measured faster for these quantized models.", gpu)), 8));
 
         // 수정
         _root.Children.Add(Gap(Ui.Section(Loc.T("Your Edits")), 18));
@@ -151,6 +161,17 @@ internal sealed class ExperimentalSettingsView : UserControl
         return m.IsVerified ? Loc.T("Language pack not installed") : Loc.T("Not available in this build: the model isn't bundled or verified yet.");
     }
 
+    /// <summary>팩 ID 대신 쓰임새를 보여 준다.</summary>
+    private static string PackTitle(string id) => id switch
+    {
+        ModelCatalog.DetectorId => Loc.T("Balloon detection (RT-DETR)"),
+        ModelCatalog.MangaOcrId => Loc.T("Japanese text recognition (manga-ocr)"),
+        ModelCatalog.PpOcrId => Loc.T("Chinese, English and Korean text recognition, language detection (PP-OCRv5)"),
+        ModelCatalog.TranslatorFastId => Loc.T("Translation — Fast (M2M100, int8)"),
+        ModelCatalog.TranslatorAccurateId => Loc.T("Translation — Accurate (M2M100, fp32)"),
+        _ => id,
+    };
+
     private FrameworkElement PackRow(ModelManifest m)
     {
         var service = _f.Service;
@@ -167,8 +188,8 @@ internal sealed class ExperimentalSettingsView : UserControl
         }
         if (action is not null) { DockPanel.SetDock(action, Dock.Right); row.Children.Add(action); }
         var text = new StackPanel();
-        text.Children.Add(Ui.Text(m.Id, "Text.Body", wrap: false));
-        text.Children.Add(Ui.Caption($"{m.Mode} · {status}"));
+        text.Children.Add(Ui.Text(PackTitle(m.Id), "Text.Body", wrap: false));
+        text.Children.Add(Ui.Caption($"{m.Id} · {status}"));
         row.Children.Add(text);
         return row;
     }

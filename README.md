@@ -99,11 +99,11 @@ powershell -ExecutionPolicy Bypass -File tools\make-samples.ps1 -Out D:\PanelySa
 
 설정 › 실험적 기능에서 **번역 보조**를 켭니다. 처음 번역할 때 번역 패널이나 설정에서 언어팩을 내려받습니다(고정 revision, sha256 검증).
 
-- Fast: M2M100-418M int8, 약 630MB
-- Accurate: M2M100-418M fp32, 약 2.5GB
-- 말풍선 탐지: 약 170MB
+- 말풍선 탐지(RT-DETR): 약 170MB
+- 글자 인식: 일본어 manga-ocr 약 117MB, 중국어·영어·한국어·언어 감지 PP-OCRv5 약 43MB
+- 번역 Fast: M2M100-418M int8, 약 640MB / Accurate: fp32, 약 2.5GB
 
-설치한 뒤에는 네트워크 없이 동작합니다. 글자 인식은 Windows OCR을 쓰므로, 일본어·중국어 책을 번역하려면 Windows 설정 › 시간 및 언어에서 해당 언어의 OCR(광학 문자 인식) 기능이 설치되어 있어야 합니다. 말투 맞춤은 검증된 Windows 로컬 모델이 없어 비활성 상태입니다. 자세한 제약은 구현 현황 문서를 보세요.
+설치한 뒤에는 네트워크 없이 동작합니다. 글자 인식은 [comic-translate](https://github.com/ogkalu2/comic-translate)와 같은 구성(일본어 manga-ocr, 그 외 PP-OCRv5)이라 세로쓰기 일본어도 읽습니다. 말풍선 탐지는 GPU(DirectML), 글자 인식·번역은 실측상 더 빠른 CPU에서 돕니다. 말투 맞춤은 검증된 Windows 로컬 모델이 없어 비활성 상태입니다. 자세한 제약은 구현 현황 문서를 보세요.
 
 ## 단축키(일부)
 

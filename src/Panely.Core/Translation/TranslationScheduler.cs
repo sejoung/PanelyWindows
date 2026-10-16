@@ -355,14 +355,14 @@ public sealed class TranslationScheduler : IAsyncDisposable
         if (job.Source is null)
         {
             Update(job, j => j.Phase = TranslationPhase.DetectingLanguage);
-            var detected = await DetectSourceAsync(book, job.FocusPage, ct).ConfigureAwait(false);
+            var (detected, readable) = await DetectSourceAsync(book, job.FocusPage, ct).ConfigureAwait(false);
             if (detected is null)
             {
                 Update(job, j =>
                 {
                     j.Phase = TranslationPhase.Failed;
                     j.Reason = TranslationStopReason.CouldNotDetectLanguage;
-                    j.ReasonMessage = Loc.T("Couldn't tell which language this book is in. Choose it in the translation panel.");
+                    j.ReasonMessage = DetectionFailureMessage(readable);
                 });
                 return;
             }
@@ -370,6 +370,17 @@ public sealed class TranslationScheduler : IAsyncDisposable
         }
 
         var source = job.Source!;
+        if (source == job.Target)
+        {
+            // 원문이 번역할 언어와 같다: 감지가 틀렸을 수도 있으니 원어를 확인하게 안내한다
+            Update(job, j =>
+            {
+                j.Phase = TranslationPhase.Failed;
+                j.Reason = TranslationStopReason.UnsupportedPair;
+                j.ReasonMessage = Loc.T("This book's language is set to %@, the same language it would be translated into. If the book is in another language, choose it under Book's language at the top of the translation panel; otherwise translate into another language.", Loc.LanguageName(source));
+            });
+            return;
+        }
         var capability = _providers.Packs.GetCapability(source, job.Target, job.Mode);
         if (!capability.IsReady)
         {
@@ -687,15 +698,38 @@ public sealed class TranslationScheduler : IAsyncDisposable
         return pixels;
     }
 
+    /// <summary>감지할 때 읽어 보는 최대 쪽 수. 웹툰은 앞쪽 조각에 글자가 없는 경우가 많아 3쪽으로는 부족하다.</summary>
+    public const int MaxDetectionPages = 15;
+
     /// <summary>
-    /// 원문 언어 감지: 설치된 OCR 언어로 최대 3쪽을 읽어 자체 문자 수가 가장 많은 언어를 고른다.
+    /// 감지 실패 안내. Windows OCR은 설치된 언어만 읽을 수 있으므로, 읽을 수 있는 언어를 밝혀
+    /// "일본어 책인데 일본어 글자 인식이 없음" 같은 실제 원인을 알 수 있게 한다.
     /// </summary>
-    private async Task<string?> DetectSourceAsync(OpenedBook book, int focusPage, CancellationToken ct)
+    public static string DetectionFailureMessage(IReadOnlyCollection<string> readableLanguages)
     {
+        if (readableLanguages.Count == 0)
+            return Loc.T("No text recognition language is installed on this PC, so the book can't be read. Add a language with its optical character recognition feature in Windows Settings › Time & language › Language & region.");
+        if (readableLanguages.Count < TranslationLanguages.All.Count)
+        {
+            var names = string.Join(", ", readableLanguages.Select(Loc.LanguageName));
+            return Loc.T("Couldn't tell which language this book is in. This PC can only read %@ text — if the book is in another language such as Japanese or Chinese, install that language's text recognition in Windows. You can also choose the book's language at the top of the translation panel.", names);
+        }
+        return Loc.T("Couldn't tell which language this book is in. Choose the book's language at the top of the translation panel.");
+    }
+
+    /// <summary>
+    /// 원문 언어 감지: 설치된 OCR 언어로 최대 <see cref="MaxDetectionPages"/>쪽을 읽어 자체 문자 수가 가장 많은 언어를 고른다.
+    /// 근거가 충분하면(자체 문자 12개 이상) 일찍 멈춘다. Readable은 이 PC가 읽을 수 있는 언어(실패 안내용).
+    /// </summary>
+    private async Task<(string? Language, IReadOnlyList<string> Readable)> DetectSourceAsync(OpenedBook book, int focusPage, CancellationToken ct)
+    {
+        if (_providers.Recognizer is ILanguageIdentifier { CanIdentify: true } identifier)
+            return (await IdentifyWithModelAsync(identifier, book, focusPage, ct).ConfigureAwait(false), TranslationLanguages.All);
+
         var candidates = TranslationLanguages.All.Where(l => _providers.Recognizer.GetCapability(l).IsReady).ToList();
-        if (candidates.Count == 0) return null;
-        var pages = TranslationOrder.Pages(book.Pages.Count, focusPage).Take(3).ToList();
-        var scores = new Dictionary<string, int>();
+        if (candidates.Count == 0) return (null, candidates);
+        var pages = TranslationOrder.Pages(book.Pages.Count, focusPage).Take(MaxDetectionPages).ToList();
+        var evidence = new Dictionary<string, DetectionEvidence>();
         var texts = new List<string>();
         foreach (var p in pages)
         {
@@ -703,28 +737,55 @@ public sealed class TranslationScheduler : IAsyncDisposable
             foreach (var lang in candidates.Where(l => l != TranslationLanguages.ChineseTraditional || !candidates.Contains(TranslationLanguages.ChineseSimplified)))
             {
                 var regions = await _providers.Recognizer.RecognizeAsync(pixels, lang, null, ct).ConfigureAwait(false);
-                var own = regions.Sum(r => r.Text.Count(c => lang switch
-                {
-                    TranslationLanguages.Japanese => Scripts.IsKana(c),
-                    TranslationLanguages.Korean => Scripts.IsHangul(c),
-                    TranslationLanguages.English => Scripts.IsAsciiLetter(c),
-                    _ => Scripts.IsHan(c),
-                }));
-                // 영어 OCR은 어떤 글자든 라틴으로 읽으려 하므로 가중치를 낮춘다
-                if (lang == TranslationLanguages.English) own /= 3;
-                scores[lang] = scores.GetValueOrDefault(lang) + own;
+                var e = evidence.GetValueOrDefault(lang);
+                foreach (var r in regions) e = e.Add(DetectionEvidence.Of(r.Text, lang));
+                evidence[lang] = e;
                 texts.AddRange(regions.Select(r => r.Text));
             }
-            if (scores.Values.DefaultIfEmpty(0).Max() >= 12) break;
+            if (PickDetectedLanguage(evidence) is { } sure && evidence[sure].Own >= DetectionEvidence.EarlyStopOwn) break;
         }
-        var best = scores.Where(kv => kv.Value >= 2).OrderByDescending(kv => kv.Value).Select(kv => kv.Key).FirstOrDefault();
+        var best = PickDetectedLanguage(evidence);
         if (best is TranslationLanguages.ChineseSimplified or TranslationLanguages.ChineseTraditional)
         {
             var refined = LanguageDetector.Detect(texts);
             if (refined is TranslationLanguages.ChineseSimplified or TranslationLanguages.ChineseTraditional && candidates.Contains(refined)) best = refined;
         }
-        return best;
+        return (best, candidates);
     }
+
+    /// <summary>
+    /// 만화 OCR 모델로 감지: 탐지한 글자 상자(없으면 페이지 전체)를 다국어/한국어 모델로 읽어 근거를 모은다.
+    /// 중국어로 보이면 간체/번체 전용 글자로 다시 나눈다.
+    /// </summary>
+    private async Task<string?> IdentifyWithModelAsync(ILanguageIdentifier identifier, OpenedBook book, int focusPage, CancellationToken ct)
+    {
+        var evidence = new Dictionary<string, DetectionEvidence>();
+        foreach (var p in TranslationOrder.Pages(book.Pages.Count, focusPage).Take(MaxDetectionPages))
+        {
+            var pixels = await _pixels.GetPixelsAsync(book, book.Pages[p], ct).ConfigureAwait(false);
+            IReadOnlyList<RectD>? boxes = null;
+            if (_providers.Detector.Capability.IsReady)
+                boxes = (await _providers.Detector.DetectAsync(pixels, ct).ConfigureAwait(false))?.Where(d => d.IsTextBox).Select(d => d.Rect).ToList();
+            if (boxes is { Count: 0 }) continue; // 글자 상자가 없는 쪽(그림만 있는 웹툰 조각)은 건너뛴다
+            foreach (var (lang, e) in await identifier.IdentifyAsync(pixels, boxes, ct).ConfigureAwait(false))
+                evidence[lang] = evidence.GetValueOrDefault(lang).Add(e);
+            if (PickDetectedLanguage(evidence) is { } sure && evidence[sure].Own >= DetectionEvidence.EarlyStopOwn) break;
+        }
+        return PickDetectedLanguage(evidence);
+    }
+
+    /// <summary>
+    /// 언어별 근거 중 믿을 만한 것을 고른다. 다른 언어의 글자나 그림 무늬를 OCR이 억지로 읽은 잡음
+    /// (예: 한국어 OCR이 건물 무늬를 "1닿11*들흁원『『"로 읽음)을 걸러내기 위해,
+    /// 자체 문자가 <see cref="DetectionEvidence.MinOwn"/>개 이상이고 인식된 글자 중 자체 문자 비율이
+    /// <see cref="DetectionEvidence.MinShare"/> 이상인 언어만 후보로 본다. 영어 OCR은 어떤 글자든 라틴으로 읽으려 하므로 순위 가중치를 낮춘다.
+    /// </summary>
+    public static string? PickDetectedLanguage(IReadOnlyDictionary<string, DetectionEvidence> evidence)
+        => evidence
+            .Where(kv => kv.Value.IsConvincing)
+            .OrderByDescending(kv => kv.Key == TranslationLanguages.English ? kv.Value.Own / 3.0 : kv.Value.Own)
+            .Select(kv => kv.Key)
+            .FirstOrDefault();
 
     // ───────────────────────── 내부 상태 ─────────────────────────
 

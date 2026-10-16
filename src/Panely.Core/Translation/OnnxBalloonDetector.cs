@@ -21,7 +21,10 @@ public sealed class OnnxBalloonDetector : IBalloonDetector, IDisposable
 
     public OnnxBalloonDetector(ModelStore store) => _store = store;
 
-    public string Name => "RT-DETR comic detector (ONNX Runtime CPU)";
+    public string Name => "RT-DETR comic detector (ONNX Runtime)";
+
+    /// <summary>실제로 쓰는 장치(GPU/CPU). 세션을 만들기 전에는 null.</summary>
+    public InferenceDevice? Device { get; private set; }
 
     public string Revision => _store.Find(ModelCatalog.DetectorId) is { } m && _store.IsInstalled(m) ? m.Revision : "none";
 
@@ -121,7 +124,7 @@ public sealed class OnnxBalloonDetector : IBalloonDetector, IDisposable
         var path = _store.FilePath(m.Id, m.Files[0].Name);
         if (path is null) return null;
         _session?.Dispose();
-        _session = new InferenceSession(path, new SessionOptions { GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL });
+        (_session, Device) = OnnxSessions.Create(path);
         _sessionRevision = m.Revision;
         return _session;
     }

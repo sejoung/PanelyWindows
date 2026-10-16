@@ -8,6 +8,48 @@ public enum TranslationPhase { Idle, DetectingLanguage, Preparing, Translating, 
 
 public enum TranslationStopReason { None, NeedsLanguageDownload, UnsupportedPair, CouldNotDetectLanguage, Failed }
 
+/// <summary>
+/// 원문 언어 감지 근거: 한 언어의 OCR이 읽은 글자 중 그 언어 자체 문자 수(Own)와 공백을 뺀 전체 글자 수(Total).
+/// </summary>
+public readonly record struct DetectionEvidence(int Own, int Total)
+{
+    /// <summary>믿을 만한 자체 문자 최소 개수.</summary>
+    public const int MinOwn = 8;
+    /// <summary>인식된 글자 중 자체 문자 최소 비율(잡음은 숫자·기호가 섞여 비율이 낮다).</summary>
+    public const double MinShare = 0.6;
+    /// <summary>이만큼 모이면 더 읽지 않는다.</summary>
+    public const int EarlyStopOwn = 24;
+
+    public bool IsConvincing => Own >= MinOwn && Total > 0 && Own >= Total * MinShare;
+
+    public DetectionEvidence Add(DetectionEvidence other) => new(Own + other.Own, Total + other.Total);
+
+    /// <summary>
+    /// 한 줄(영역) 텍스트의 근거. 일본어는 가나와 한자를 세되 가나가 있는 줄의 한자만 센다(중국어 한자 줄을 일본어로 세지 않게).
+    /// </summary>
+    public static DetectionEvidence Of(string text, string language)
+    {
+        int kana = 0, han = 0, hangul = 0, latin = 0, total = 0;
+        foreach (var c in text)
+        {
+            if (char.IsWhiteSpace(c)) continue;
+            total++;
+            if (Scripts.IsKana(c)) kana++;
+            else if (Scripts.IsHan(c)) han++;
+            else if (Scripts.IsHangul(c)) hangul++;
+            else if (Scripts.IsAsciiLetter(c)) latin++;
+        }
+        var own = language switch
+        {
+            TranslationLanguages.Japanese => kana > 0 ? kana + han : 0,
+            TranslationLanguages.Korean => hangul,
+            TranslationLanguages.English => latin,
+            _ => han,
+        };
+        return new DetectionEvidence(own, total);
+    }
+}
+
 /// <summary>번역/내보내기 대상 책(열려 있지 않아도 다시 열 수 있는 정보).</summary>
 public sealed record BookTarget(string BookKey, string Path, string? InnerPath, string Title, string SeriesKey, bool IsNestedCacheBook)
 {

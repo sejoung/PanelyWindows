@@ -66,6 +66,21 @@ public sealed class M2M100Translator : ITranslator, IDisposable
         try
         {
             var runtime = EnsureRuntime(mode);
+            if (runtime.SupportsCache && items.Count > 0)
+            {
+                // KV 캐시 + 배치: 한 묶음의 말풍선을 한 번에 디코딩한다(문장마다 따로 돌리던 방식보다 훨씬 빠르다)
+                try
+                {
+                    var texts = await Task.Run(() => runtime.TranslateBatch(items.Select(i => i.Text).ToList(), ModelLanguage(source), ModelLanguage(target), cancellationToken), cancellationToken).ConfigureAwait(false);
+                    for (var i = 0; i < items.Count; i++) results.Add(new TranslationResultItem(items[i].Id, texts[i]));
+                    return results;
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception)
+                {
+                    results.Clear(); // 배치가 실패하면 아래에서 한 문장씩 다시 시도한다
+                }
+            }
             foreach (var item in items)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -86,6 +101,16 @@ public sealed class M2M100Translator : ITranslator, IDisposable
             _gate.Release();
         }
         return results;
+    }
+
+    /// <summary>history 끝 두 토큰 + token 으로 이루어진 3-gram이 이미 나왔는가(시작 토큰 두 개는 제외).</summary>
+    internal static bool RepeatsTrigram(List<long> history, long token)
+    {
+        if (history.Count < 4) return false;
+        long a = history[^2], b = history[^1];
+        for (var i = 2; i + 2 < history.Count; i++)
+            if (history[i] == a && history[i + 1] == b && history[i + 2] == token) return true;
+        return false;
     }
 
     private Runtime EnsureRuntime(TranslationMode mode)
@@ -129,12 +154,20 @@ public sealed class M2M100Translator : ITranslator, IDisposable
 
         public string Revision { get; }
 
+        /// <summary>실제로 쓰는 장치(GPU/CPU).</summary>
+        public InferenceDevice Device { get; }
+
+        /// <summary>
+        /// 번역 모델 GPU 사용 여부. 실측(ONNX Runtime DirectML 1.24.4): M2M100 int8 decoder 세션 생성 중 네이티브 접근 위반(0xC0000005)으로
+        /// 프로세스가 종료되어 기본값은 CPU다. 잡을 수 없는 오류라 시도도 하지 않는다.
+        /// </summary>
+        public static bool TranslatorPrefersGpu { get; set; }
+
         public Runtime(string revision, string encoderPath, string decoderPath, string spmPath, string vocabPath, string hiddenName, string logitsName, int beams, int maxNew)
         {
             Revision = revision;
-            var options = new SessionOptions { GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL };
-            _encoder = new InferenceSession(encoderPath, options);
-            _decoder = new InferenceSession(decoderPath, options);
+            (_encoder, Device) = OnnxSessions.Create(encoderPath, TranslatorPrefersGpu);
+            (_decoder, _) = OnnxSessions.Create(decoderPath, TranslatorPrefersGpu);
             using (var stream = File.OpenRead(spmPath)) _spm = SentencePieceTokenizer.Create(stream, false, false, null);
             _vocab = JsonSerializer.Deserialize<Dictionary<string, int>>(File.ReadAllText(vocabPath)) ?? [];
             _inverse = _vocab.GroupBy(kv => kv.Value).ToDictionary(g => g.Key, g => g.First().Key);
@@ -152,12 +185,213 @@ public sealed class M2M100Translator : ITranslator, IDisposable
             _maxNew = maxNew;
         }
 
-        public string Translate(string text, string source, string target, CancellationToken cancellationToken)
+        /// <summary>optimum merged decoder(use_cache_branch + past_key_values)면 KV 캐시 경로를 쓴다.</summary>
+        public bool SupportsCache => _decoder.InputMetadata.ContainsKey("use_cache_branch");
+
+        /// <summary>
+        /// 원문 → fairseq id. NFKC로 전각 숫자·영문(예: manga-ocr의 "４時間")을 반각으로 바꿔 모델이 숫자를 잃지 않게 한다.
+        /// </summary>
+        private List<long> Encode(string text, string source)
         {
-            var pieces = _spm.EncodeToTokens(text, out _, false, false, true, true);
+            var normalized = text.Normalize(NormalizationForm.FormKC);
+            var pieces = _spm.EncodeToTokens(normalized, out _, false, false, true, true);
             var ids = new List<long> { _langIds[source] };
             foreach (var p in pieces.Take(MaxSourceTokens)) ids.Add(_vocab.TryGetValue(p.Value, out var id) ? id : Unk);
             ids.Add(Eos);
+            return ids;
+        }
+
+        /// <summary>
+        /// 여러 문장을 한 번에: 인코더 1회, 디코더는 KV 캐시로 토큰마다 마지막 위치만 계산한다.
+        /// beams=1이면 greedy(Fast), 그 이상이면 문장별 beam search(Accurate). 길이로 나눈 점수로 고른다.
+        /// </summary>
+        public string[] TranslateBatch(IReadOnlyList<string> texts, string source, string target, CancellationToken ct)
+        {
+            var n = texts.Count;
+            var k = _beams;
+            var seqs = texts.Select(t => Encode(t, source)).ToList();
+            var srcLen = seqs.Max(s => s.Count);
+            var ids = new long[n * srcLen];
+            var mask = new long[n * srcLen];
+            Array.Fill(ids, Pad);
+            for (var i = 0; i < n; i++)
+                for (var t = 0; t < seqs[i].Count; t++) { ids[i * srcLen + t] = seqs[i][t]; mask[i * srcLen + t] = 1; }
+
+            float[] hiddenData;
+            int dim;
+            using (var encoded = _encoder.Run(
+            [
+                NamedOnnxValue.CreateFromTensor("input_ids", new DenseTensor<long>(ids, [n, srcLen])),
+                NamedOnnxValue.CreateFromTensor("attention_mask", new DenseTensor<long>(mask, [n, srcLen])),
+            ]))
+            {
+                var hidden = encoded.First(o => o.Name == _hiddenName).AsTensor<float>();
+                dim = hidden.Dimensions[2];
+                hiddenData = hidden.ToArray();
+            }
+
+            var rows = n * k;
+            var rowHidden = new float[rows * srcLen * dim];
+            var rowMask = new long[rows * srcLen];
+            for (var r = 0; r < rows; r++)
+            {
+                Array.Copy(hiddenData, r / k * srcLen * dim, rowHidden, r * srcLen * dim, srcLen * dim);
+                Array.Copy(mask, r / k * srcLen, rowMask, r * srcLen, srcLen);
+            }
+            var encoderHidden = new DenseTensor<float>(rowHidden, [rows, srcLen, dim]);
+            var encoderMask = new DenseTensor<long>(rowMask, [rows, srcLen]);
+
+            var layers = _decoder.InputMetadata.Keys.Count(name => name.StartsWith("past_key_values.", StringComparison.Ordinal) && name.EndsWith(".decoder.key", StringComparison.Ordinal));
+            var heads = _decoder.InputMetadata["past_key_values.0.decoder.key"].Dimensions[1];
+            var headDim = _decoder.InputMetadata["past_key_values.0.decoder.key"].Dimensions[3];
+            var decoderPast = new DenseTensor<float>[layers * 2];
+            var encoderPast = new DenseTensor<float>[layers * 2];
+
+            // 시작: [</s>, __tgt__]
+            var tokens = Enumerable.Range(0, rows).Select(_ => new List<long> { Eos, _langIds[target] }).ToArray();
+            var scores = new double[rows];
+            for (var r = 0; r < rows; r++) scores[r] = r % k == 0 ? 0 : double.NegativeInfinity;
+            var finished = Enumerable.Range(0, n).Select(_ => new List<(List<long> Tokens, double Score)>()).ToArray();
+            var done = new bool[n];
+
+            var stepIds = new long[rows * 2];
+            for (var r = 0; r < rows; r++) { stepIds[r * 2] = Eos; stepIds[r * 2 + 1] = _langIds[target]; }
+            var logits = RunDecoder(new DenseTensor<long>(stepIds, [rows, 2]), encoderMask, encoderHidden, decoderPast, encoderPast, layers, heads, headDim, rows, firstStep: true);
+
+            for (var step = 0; step < _maxNew; step++)
+            {
+                ct.ThrowIfCancellationRequested();
+                var parents = new int[rows];
+                var next = new long[rows];
+                var newScores = new double[rows];
+                var newTokens = new List<long>[rows];
+                for (var item = 0; item < n; item++)
+                {
+                    var baseRow = item * k;
+                    if (done[item])
+                    {
+                        for (var b = 0; b < k; b++) { parents[baseRow + b] = baseRow; next[baseRow + b] = Pad; newScores[baseRow + b] = double.NegativeInfinity; newTokens[baseRow + b] = tokens[baseRow]; }
+                        continue;
+                    }
+                    var candidates = new List<(int Row, int Token, double Score)>();
+                    for (var b = 0; b < k; b++)
+                    {
+                        var row = baseRow + b;
+                        if (double.IsNegativeInfinity(scores[row])) continue;
+                        var history = tokens[row];
+                        foreach (var (token, lp) in TopK(LogSoftmax(logits[row]), Math.Max(3, k * 2 + 1)))
+                        {
+                            if (token == Pad || token == Bos) continue;
+                            // 같은 3-gram 반복 금지(HF no_repeat_ngram_size=3과 같은 뜻): 잡음 원문에서 "는 는 는…"처럼 도는 것을 막는다
+                            if (RepeatsTrigram(history, token)) continue;
+                            candidates.Add((row, token, scores[row] + lp));
+                        }
+                    }
+                    candidates.Sort((a, b) => b.Score.CompareTo(a.Score));
+                    var filled = 0;
+                    foreach (var c in candidates)
+                    {
+                        if (filled == k) break;
+                        if (c.Token == Eos)
+                        {
+                            if (finished[item].Count < k) finished[item].Add((new List<long>(tokens[c.Row]), c.Score));
+                            continue;
+                        }
+                        var target2 = baseRow + filled++;
+                        parents[target2] = c.Row;
+                        next[target2] = c.Token;
+                        newScores[target2] = c.Score;
+                        newTokens[target2] = new List<long>(tokens[c.Row]) { c.Token };
+                    }
+                    for (; filled < k; filled++)
+                    {
+                        parents[baseRow + filled] = baseRow; next[baseRow + filled] = Pad;
+                        newScores[baseRow + filled] = double.NegativeInfinity; newTokens[baseRow + filled] = tokens[baseRow];
+                    }
+                    // beam이 다 끝났거나 살아 있는 beam이 없으면 이 문장은 끝
+                    if (finished[item].Count >= k || Enumerable.Range(baseRow, k).All(r => double.IsNegativeInfinity(newScores[r])))
+                        done[item] = true;
+                }
+                tokens = newTokens;
+                scores = newScores;
+                if (done.All(d => d)) break;
+
+                for (var i = 0; i < decoderPast.Length; i++) decoderPast[i] = Gather(decoderPast[i], parents);
+                logits = RunDecoder(new DenseTensor<long>(next, [rows, 1]), encoderMask, encoderHidden, decoderPast, encoderPast, layers, heads, headDim, rows, firstStep: false);
+            }
+
+            var results = new string[n];
+            for (var item = 0; item < n; item++)
+            {
+                var pool = finished[item].Select(f => (f.Tokens, f.Score)).ToList();
+                if (pool.Count == 0)
+                    pool = Enumerable.Range(item * k, k).Where(r => !double.IsNegativeInfinity(scores[r])).Select(r => (tokens[r], scores[r])).ToList();
+                var best = pool.Count == 0 ? tokens[item * k] : pool.OrderByDescending(p => p.Item2 / Math.Max(1, p.Item1.Count)).First().Item1;
+                results[item] = DecodeTokens(best.Skip(2));
+            }
+            return results;
+        }
+
+        /// <summary>디코더 1단계. 마지막 위치의 logits만 행별로 돌려주고 present.* 로 캐시를 갱신한다.</summary>
+        private float[][] RunDecoder(DenseTensor<long> inputIds, DenseTensor<long> encoderMask, DenseTensor<float> encoderHidden,
+            DenseTensor<float>[] decoderPast, DenseTensor<float>[] encoderPast, int layers, int heads, int headDim, int rows, bool firstStep)
+        {
+            var empty = new DenseTensor<float>(Array.Empty<float>(), [rows, heads, 0, headDim]);
+            var inputs = new List<NamedOnnxValue>
+            {
+                NamedOnnxValue.CreateFromTensor("input_ids", inputIds),
+                NamedOnnxValue.CreateFromTensor("encoder_attention_mask", encoderMask),
+                NamedOnnxValue.CreateFromTensor("encoder_hidden_states", encoderHidden),
+                NamedOnnxValue.CreateFromTensor("use_cache_branch", new DenseTensor<bool>(new[] { !firstStep }, [1])),
+            };
+            for (var l = 0; l < layers; l++)
+            {
+                inputs.Add(NamedOnnxValue.CreateFromTensor($"past_key_values.{l}.decoder.key", firstStep ? empty : decoderPast[l * 2]));
+                inputs.Add(NamedOnnxValue.CreateFromTensor($"past_key_values.{l}.decoder.value", firstStep ? empty : decoderPast[l * 2 + 1]));
+                inputs.Add(NamedOnnxValue.CreateFromTensor($"past_key_values.{l}.encoder.key", firstStep ? empty : encoderPast[l * 2]));
+                inputs.Add(NamedOnnxValue.CreateFromTensor($"past_key_values.{l}.encoder.value", firstStep ? empty : encoderPast[l * 2 + 1]));
+            }
+            using var outputs = _decoder.Run(inputs);
+            var map = outputs.ToDictionary(o => o.Name);
+            for (var l = 0; l < layers; l++)
+            {
+                decoderPast[l * 2] = map[$"present.{l}.decoder.key"].AsTensor<float>().ToDenseTensor();
+                decoderPast[l * 2 + 1] = map[$"present.{l}.decoder.value"].AsTensor<float>().ToDenseTensor();
+                // 인코더 cross-attention 캐시는 첫 단계에서만 만들어지고 이후 그대로다
+                if (firstStep)
+                {
+                    encoderPast[l * 2] = map[$"present.{l}.encoder.key"].AsTensor<float>().ToDenseTensor();
+                    encoderPast[l * 2 + 1] = map[$"present.{l}.encoder.value"].AsTensor<float>().ToDenseTensor();
+                }
+            }
+            var logits = map[_logitsName].AsTensor<float>();
+            var length = logits.Dimensions[1];
+            var vocab = logits.Dimensions[2];
+            var result = new float[rows][];
+            for (var r = 0; r < rows; r++)
+            {
+                var row = new float[vocab];
+                for (var v = 0; v < vocab; v++) row[v] = logits[r, length - 1, v];
+                result[r] = row;
+            }
+            return result;
+        }
+
+
+        /// <summary>beam 재배열: 새 행 r의 캐시 = 부모 행 parents[r]의 캐시.</summary>
+        private static DenseTensor<float> Gather(DenseTensor<float> source, int[] parents)
+        {
+            var dims = source.Dimensions.ToArray();
+            var block = dims[1] * dims[2] * dims[3];
+            var data = new float[parents.Length * block];
+            var span = source.Buffer.Span;
+            for (var r = 0; r < parents.Length; r++) span.Slice(parents[r] * block, block).CopyTo(data.AsSpan(r * block, block));
+            return new DenseTensor<float>(data, dims);
+        }
+
+        public string Translate(string text, string source, string target, CancellationToken cancellationToken)
+        {
+            var ids = Encode(text, source);
 
             var srcLen = ids.Count;
             var inputIds = new DenseTensor<long>(ids.ToArray(), [1, srcLen]);

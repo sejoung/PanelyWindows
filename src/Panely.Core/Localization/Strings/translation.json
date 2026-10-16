@@ -75,5 +75,54 @@
   "Show Original (⇧⌘T)": { "en": "Show Original (Ctrl+Shift+T)", "ko": "원본 보기 (Ctrl+Shift+T)" },
   "Show Translation (⇧⌘T)": { "en": "Show Translation (Ctrl+Shift+T)", "ko": "번역 보기 (Ctrl+Shift+T)" },
   "Show Jobs (⌥⌘J)": { "en": "Show Jobs (Ctrl+Alt+J)", "ko": "작업 보기 (Ctrl+Alt+J)" },
-  "Finished Jobs": { "en": "Finished", "ko": "완료됨" }
+  "Finished Jobs": { "en": "Finished", "ko": "완료됨" },
+
+  // 원문 언어 선택(번역 패널 맨 위)과 감지 실패 안내
+  "Book's language": { "en": "Book's language", "ko": "원문 언어" },
+  "%@ — text recognition not installed": { "en": "%@ — text recognition not installed", "ko": "%@ — 글자 인식 미설치" },
+  "Choose the language the book is written in.": { "en": "Choose the language the book is written in.", "ko": "책이 쓰인 언어를 고르세요." },
+  "Open Windows Language Settings": { "en": "Open Windows Language Settings", "ko": "Windows 언어 설정 열기" },
+  "Check Again": { "en": "Check Again", "ko": "다시 확인" },
+  "No text recognition language is installed on this PC, so the book can't be read. Add a language with its optical character recognition feature in Windows Settings › Time & language › Language & region.": {
+    "en": "No text recognition language is installed on this PC, so the book can't be read. Add a language with its optical character recognition feature in Windows Settings › Time & language › Language & region.",
+    "ko": "이 PC에 설치된 글자 인식 언어가 없어 책을 읽을 수 없습니다. Windows 설정 › 시간 및 언어 › 언어 및 지역에서 언어를 추가하고 광학 문자 인식(OCR) 기능을 설치하세요."
+  },
+  "Couldn't tell which language this book is in. This PC can only read %@ text — if the book is in another language such as Japanese or Chinese, install that language's text recognition in Windows. You can also choose the book's language at the top of the translation panel.": {
+    "en": "Couldn't tell which language this book is in. This PC can only read %@ text — if the book is in another language such as Japanese or Chinese, install that language's text recognition in Windows. You can also choose the book's language at the top of the translation panel.",
+    "ko": "책의 언어를 알아내지 못했습니다. 이 PC는 %@ 글자만 읽을 수 있습니다. 일본어·중국어 등 다른 언어의 책이라면 Windows에 그 언어의 글자 인식(OCR)을 설치하세요. 번역 패널 맨 위 '원문 언어'에서 직접 고를 수도 있습니다."
+  },
+  "Couldn't tell which language this book is in. Choose the book's language at the top of the translation panel.": {
+    "en": "Couldn't tell which language this book is in. Choose the book's language at the top of the translation panel.",
+    "ko": "책의 언어를 알아내지 못했습니다. 번역 패널 맨 위 '원문 언어'에서 직접 고르세요."
+  },
+  "This book's language is set to %@, the same language it would be translated into. If the book is in another language, choose it under Book's language at the top of the translation panel; otherwise translate into another language.": {
+    "en": "This book's language is set to %@, the same language it would be translated into. If the book is in another language, choose it under Book's language at the top of the translation panel; otherwise translate into another language.",
+    "ko": "이 책의 원문 언어가 번역할 언어와 같은 %@(으)로 되어 있습니다. 책이 다른 언어라면 번역 패널 맨 위 '원문 언어'에서 고르고, 아니라면 다른 언어로 번역하세요."
+  },
+  "Windows text recognition reads horizontal lines. Vertical (top-to-bottom) text may not be recognized, so some balloons can stay untranslated.": {
+    "en": "Windows text recognition reads horizontal lines. Vertical (top-to-bottom) text may not be recognized, so some balloons can stay untranslated.",
+    "ko": "Windows 글자 인식은 가로 줄을 읽습니다. 세로쓰기(위→아래) 글자는 인식되지 않을 수 있어 일부 말풍선이 번역되지 않을 수 있습니다."
+  },
+  // 만화 OCR 모델(manga-ocr / PP-OCRv5)과 GPU 가속
+  "Download the text recognition pack for %@ to read this book.": { "en": "Download the text recognition pack for %@ to read this book.", "ko": "이 책을 읽으려면 %@ 글자 인식 팩을 내려받으세요." },
+  "Text recognition isn't available.": { "en": "Text recognition isn't available.", "ko": "글자 인식을 사용할 수 없습니다." },
+  "Text recognition": { "en": "Text recognition", "ko": "글자 인식" },
+  "Windows OCR (fallback)": { "en": "Windows OCR (fallback)", "ko": "Windows OCR(대체)" },
+  "off (PANELY_ORT_DEVICE=cpu)": { "en": "off (PANELY_ORT_DEVICE=cpu)", "ko": "꺼짐(PANELY_ORT_DEVICE=cpu)" },
+  "unavailable: %@": { "en": "unavailable: %@", "ko": "사용 불가: %@" },
+  "GPU acceleration: balloon detection uses the GPU (%@). Text recognition and translation run on the CPU, which measured faster for these quantized models.": {
+    "en": "GPU acceleration: balloon detection uses the GPU (%@). Text recognition and translation run on the CPU, which measured faster for these quantized models.",
+    "ko": "GPU 가속: 말풍선 탐지는 GPU(%@)를 씁니다. 글자 인식과 번역은 이 양자화 모델들에서 더 빨랐던 CPU로 실행합니다."
+  },
+  "Balloon detection (RT-DETR)": { "en": "Balloon detection (RT-DETR)", "ko": "말풍선 탐지 (RT-DETR)" },
+  "Japanese text recognition (manga-ocr)": { "en": "Japanese text recognition (manga-ocr)", "ko": "일본어 글자 인식 (manga-ocr)" },
+  "Chinese, English and Korean text recognition, language detection (PP-OCRv5)": { "en": "Chinese, English and Korean text recognition, language detection (PP-OCRv5)", "ko": "중국어·영어·한국어 글자 인식, 언어 감지 (PP-OCRv5)" },
+  "Translation — Fast (M2M100, int8)": { "en": "Translation — Fast (M2M100, int8)", "ko": "번역 — 빠르게 (M2M100, int8)" },
+  "Translation — Accurate (M2M100, fp32)": { "en": "Translation — Accurate (M2M100, fp32)", "ko": "번역 — 정확하게 (M2M100, fp32)" },
+  // "기본 언어"는 원문 언어로 오해되기 쉬워, 번역해서 보여 줄 언어임을 이름에 드러낸다
+  "Default Language": { "en": "Translate Into by Default", "ko": "기본 번역 언어" },
+  "The default language is what new series are shown in. Each series can be shown in another language, and each book's own language is detected the first time it's translated — both from the translation button in the toolbar, remembered per series.": {
+    "en": "The language new series are translated into. This is not the book's own language: that is detected the first time a book is translated, and you can change it under Book's language at the top of the translation panel. Both are remembered per series.",
+    "ko": "새 시리즈를 번역해서 보여 줄 언어입니다. 책의 원문 언어가 아닙니다. 원문 언어는 처음 번역할 때 자동으로 감지되며, 번역 패널 맨 위 '원문 언어'에서 바꿀 수 있습니다. 둘 다 시리즈별로 기억됩니다."
+  }
 }

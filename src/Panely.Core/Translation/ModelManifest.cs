@@ -83,6 +83,10 @@ public static class ModelCatalog
     public const string DetectorId = "comic-text-and-bubble-detector";
     public const string TranslatorFastId = "m2m100-418m-int8";
     public const string TranslatorAccurateId = "m2m100-418m-fp32";
+    /// <summary>일본어 만화 OCR(manga-ocr).</summary>
+    public const string MangaOcrId = "manga-ocr-int8";
+    /// <summary>중국어·영어·한국어 OCR과 글자 줄 탐지, 언어 감지(PP-OCRv5).</summary>
+    public const string PpOcrId = "ppocr-v5-mobile";
 
     public static IReadOnlyList<ModelManifest> BuiltIn { get; } =
     [
@@ -107,16 +111,16 @@ public static class ModelCatalog
           "revision": "9c374f0b7aca709787cea97b047bfbbd1559d177",
           "files": [
             {"name": "encoder_model_quantized.onnx", "bytes": 287856370, "sha256": "13a94e354a9140764eb81102d77d3ec6952d796e6f113c651eeb3c3443da0386", "url": "https://huggingface.co/Xenova/m2m100_418M/resolve/9c374f0b7aca709787cea97b047bfbbd1559d177/onnx/encoder_model_quantized.onnx"},
-            {"name": "decoder_model_quantized.onnx", "bytes": 339181945, "sha256": "6015e31c8976659aedb06058c4dadf0f400d087a3f9830f838e68f220d79bcb6", "url": "https://huggingface.co/Xenova/m2m100_418M/resolve/9c374f0b7aca709787cea97b047bfbbd1559d177/onnx/decoder_model_quantized.onnx"},
+            {"name": "decoder_model_merged_quantized.onnx", "bytes": 344128178, "sha256": "007654bcabb6cea6fd3bde34ce933137b431330b3755781145d7b6906270b45a", "url": "https://huggingface.co/Xenova/m2m100_418M/resolve/9c374f0b7aca709787cea97b047bfbbd1559d177/onnx/decoder_model_merged_quantized.onnx"},
             {"name": "sentencepiece.bpe.model", "bytes": 2423393, "sha256": "d8f7c76ed2a5e0822be39f0a4f95a55eb19c78f4593ce609e2edbc2aea4d380a"},
             {"name": "vocab.json", "bytes": 3708092, "sha256": "b6e77e474aeea8f441363aca7614317c06381f3eacfe10fb9856d5081d1074cc"}
           ],
           "license": "MIT (facebook/m2m100_418M weights). The Xenova ONNX conversion repo states no separate license; Panely does not redistribute the files, the user downloads them from the pinned source.",
           "source": "https://huggingface.co/Xenova/m2m100_418M/resolve/9c374f0b7aca709787cea97b047bfbbd1559d177",
-          "validation": "sha256 of the ONNX files matches the Hub LFS objects; tokenizer hashes computed from the downloaded files. Translated ja/en→ko end to end on CPU. Quality not checked against a golden set.",
+          "validation": "sha256 of the ONNX files matches the Hub LFS objects; tokenizer hashes computed from the downloaded files. Translated ja/en→ko end to end on CPU with the KV-cache merged decoder (batched). Quality not checked against a golden set.",
           "languages": ["ja", "zh-Hans", "zh-Hant", "ko", "en"],
           "mode": "translator-fast",
-          "input": {"encoder": "encoder_model_quantized.onnx", "decoder": "decoder_model_quantized.onnx", "tokenizer": "sentencepiece.bpe.model", "vocab": "vocab.json"},
+          "input": {"encoder": "encoder_model_quantized.onnx", "decoder": "decoder_model_merged_quantized.onnx", "tokenizer": "sentencepiece.bpe.model", "vocab": "vocab.json"},
           "output": {"logits": "logits", "encoderHidden": "last_hidden_state"},
           "runtime": {"cpu": true, "gpu": false, "maxNewTokens": 128, "beams": 1}
         }
@@ -127,7 +131,7 @@ public static class ModelCatalog
           "revision": "9c374f0b7aca709787cea97b047bfbbd1559d177",
           "files": [
             {"name": "encoder_model.onnx", "bytes": 1133698852, "sha256": "2aaf1612c2738dec7de0a12d3f5ebb1168a38b735a33db5be7719dd669750544", "url": "https://huggingface.co/Xenova/m2m100_418M/resolve/9c374f0b7aca709787cea97b047bfbbd1559d177/onnx/encoder_model.onnx"},
-            {"name": "decoder_model.onnx", "bytes": 1335596378, "sha256": "0523bcdab1aadd68fb8a16ca8ff7637547d8a352f6149f7223869d1bd0122dbb", "url": "https://huggingface.co/Xenova/m2m100_418M/resolve/9c374f0b7aca709787cea97b047bfbbd1559d177/onnx/decoder_model.onnx"},
+            {"name": "decoder_model_merged.onnx", "bytes": 1340271309, "sha256": "22acc8d593ed1dfa9c45645c1f36ec4b9ed8ce721764509f465d7160eea78453", "url": "https://huggingface.co/Xenova/m2m100_418M/resolve/9c374f0b7aca709787cea97b047bfbbd1559d177/onnx/decoder_model_merged.onnx"},
             {"name": "sentencepiece.bpe.model", "bytes": 2423393, "sha256": "d8f7c76ed2a5e0822be39f0a4f95a55eb19c78f4593ce609e2edbc2aea4d380a"},
             {"name": "vocab.json", "bytes": 3708092, "sha256": "b6e77e474aeea8f441363aca7614317c06381f3eacfe10fb9856d5081d1074cc"}
           ],
@@ -136,9 +140,51 @@ public static class ModelCatalog
           "validation": "sha256 pinned from the Hub LFS objects only. This fp32 variant has not been downloaded or run; speed, memory and quality are unverified.",
           "languages": ["ja", "zh-Hans", "zh-Hant", "ko", "en"],
           "mode": "translator-accurate",
-          "input": {"encoder": "encoder_model.onnx", "decoder": "decoder_model.onnx", "tokenizer": "sentencepiece.bpe.model", "vocab": "vocab.json"},
+          "input": {"encoder": "encoder_model.onnx", "decoder": "decoder_model_merged.onnx", "tokenizer": "sentencepiece.bpe.model", "vocab": "vocab.json"},
           "output": {"logits": "logits", "encoderHidden": "last_hidden_state"},
           "runtime": {"cpu": true, "gpu": false, "maxNewTokens": 160, "beams": 4}
+        }
+        """),
+        ModelManifest.Parse("""
+        {
+          "id": "manga-ocr-int8",
+          "revision": "c68e56437a2e0b13a7b1f4efa0ffce76efd0478d",
+          "files": [
+            {"name": "encoder_model_int8.onnx", "bytes": 87074595, "sha256": "0eaf2b867292a44700ce38ef028b90639a2e36fc4c18c2bcdd1de7409488adb3"},
+            {"name": "decoder_model_int8.onnx", "bytes": 29675736, "sha256": "3ff0d4c34c4a66613d98ff93e0b17f22a7b09dfbeec195c3e4d6f595af3a6b6c"},
+            {"name": "vocab.txt", "bytes": 30216, "sha256": "5cb5c5586d98a2f331d9f8828e4586479b0611bfba5d8c3b6dadffc84d6a36a3"}
+          ],
+          "license": "Apache-2.0 (kha-white/manga-ocr-base; ONNX conversion ogkalu/manga-ocr-onnx, model card license at this revision)",
+          "source": "https://huggingface.co/ogkalu/manga-ocr-onnx/resolve/c68e56437a2e0b13a7b1f4efa0ffce76efd0478d",
+          "validation": "sha256 matches the Hub LFS objects and the hashes registered by ogkalu2/comic-translate. Run on Japanese webtoon crops with ONNX Runtime 1.24 (DirectML/CPU).",
+          "languages": ["ja"],
+          "mode": "ocr-manga",
+          "input": {"size": [1, 3, 224, 224], "grayscale": true, "normalize": "(x/255-0.5)/0.5"},
+          "output": {"start": 2, "end": 3},
+          "runtime": {"cpu": true, "gpu": true}
+        }
+        """),
+        ModelManifest.Parse("""
+        {
+          "id": "ppocr-v5-mobile",
+          "revision": "3b76726c3606c4af92f5133b359ed14e0d30a455",
+          "files": [
+            {"name": "ch_PP-OCRv5_mobile_det.onnx", "bytes": 4819576, "sha256": "4d97c44a20d30a81aad087d6a396b08f786c4635742afc391f6621f5c6ae78ae"},
+            {"name": "ch_PP-OCRv5_rec_mobile_infer.onnx", "bytes": 16631306, "sha256": "5825fc7ebf84ae7a412be049820b4d86d77620f204a041697b0494669b1742c5"},
+            {"name": "en_PP-OCRv5_rec_mobile_infer.onnx", "bytes": 7872351, "sha256": "c3461add59bb4323ecba96a492ab75e06dda42467c9e3d0c18db5d1d21924be8"},
+            {"name": "korean_PP-OCRv5_rec_mobile_infer.onnx", "bytes": 13488748, "sha256": "cd6e2ea50f6943ca7271eb8c56a877a5a90720b7047fe9c41a2e541a25773c9b"},
+            {"name": "ppocrv5_dict.txt", "bytes": 74012, "sha256": "d1979e9f794c464c0d2e0b70a7fe14dd978e9dc644c0e71f14158cdf8342af1b"},
+            {"name": "ppocrv5_en_dict.txt", "bytes": 1416, "sha256": "e025a66d31f327ba0c232e03f407ae8d105e1e709e7ccb3f408aa778c24e70d6"},
+            {"name": "ppocrv5_korean_dict.txt", "bytes": 47451, "sha256": "a88071c68c01707489baa79ebe0405b7beb5cca229f4fc94cc3ef992328802d7"}
+          ],
+          "license": "Apache-2.0 (PaddleOCR PP-OCRv5; ONNX conversion ogkalu/ppocr-v5-onnx, model card license at this revision)",
+          "source": "https://huggingface.co/ogkalu/ppocr-v5-onnx/resolve/3b76726c3606c4af92f5133b359ed14e0d30a455",
+          "validation": "sha256 matches the Hub LFS objects and ogkalu2/comic-translate's registry (dictionary hashes computed from the downloaded files).",
+          "languages": ["zh-Hans", "zh-Hant", "ko", "en", "ja"],
+          "mode": "ocr-ppocr",
+          "input": {"detector": "ch_PP-OCRv5_mobile_det.onnx", "recHeight": 48},
+          "output": {"decoder": "ctc"},
+          "runtime": {"cpu": true, "gpu": true}
         }
         """),
     ];

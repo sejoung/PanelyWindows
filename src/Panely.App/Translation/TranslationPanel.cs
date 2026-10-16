@@ -66,6 +66,9 @@ internal sealed class TranslationPanel : Border
             return;
         }
 
+        // 원문 언어(항상 보이게 맨 위에). 감지 실패·글자 인식 미설치일 때 강조한다.
+        root.Children.Add(BuildSourceSection(source, job));
+
         // 주요 버튼
         var capability = source is null ? null : services.Providers.Packs.GetCapability(source, target, services.State.Settings.TranslationMode);
         Button primary;
@@ -112,8 +115,10 @@ internal sealed class TranslationPanel : Border
             root.Children.Add(Spaced(Ui.Caption(status), 6));
             if (cap.Status == CapabilityStatus.Downloading) root.Children.Add(Ui.Progress(cap.Progress ?? 0));
         }
-        else root.Children.Add(Spaced(Ui.Caption(Loc.T("The book's language is detected when translation starts.")), 6));
-        if (job is not null && job.Phase != TranslationPhase.Completed)
+        // 감지 실패 안내는 위 원문 언어 칸에 이미 보인다
+        var shownAbove = job is { Reason: TranslationStopReason.CouldNotDetectLanguage }
+            || (job is { Reason: TranslationStopReason.UnsupportedPair } && source is not null && source == job.Target);
+        if (job is not null && job.Phase != TranslationPhase.Completed && !shownAbove)
         {
             root.Children.Add(Spaced(Ui.Caption(TranslationFeature.DescribeJob(job)), 4));
             if (job.TotalPages > 0 && job.IsRunningOrQueued)
@@ -188,21 +193,83 @@ internal sealed class TranslationPanel : Border
         }
     }
 
+    /// <summary>
+    /// 원문 언어 선택. 이전에는 접힌 "This Book &amp; Series" 안에 있어 감지가 실패해도 찾기 어려웠다.
+    /// 각 언어 옆에 Windows 글자 인식(OCR) 설치 여부를 보여 주고, 미설치면 Windows 설정으로 안내한다.
+    /// </summary>
+    private StackPanel BuildSourceSection(string? source, TranslationJobInfo? job)
+    {
+        var panel = new StackPanel { Margin = new Thickness(0, 12, 0, 0) };
+        var recognizer = _f.Service.Providers.Recognizer;
+        // 모델 팩을 내려받으면 읽을 수 있는 언어(Supported)도 "읽을 수 있음"으로 본다. 다운로드는 아래 주요 버튼이 맡는다.
+        bool Readable(string lang) => recognizer.GetCapability(lang).Status != CapabilityStatus.Unavailable;
+
+        panel.Children.Add(Ui.Section(Loc.T("Book's language")));
+        // 감지 결과도 시리즈 원어로 기억되므로 현재 원어를 그대로 선택해 보여 준다. "자동 감지"는 다시 감지한다는 뜻.
+        var options = new List<(string, string?)> { (Loc.T("Detect Automatically"), null) };
+        options.AddRange(TranslationLanguages.All.Select(l =>
+            (Readable(l) ? Loc.LanguageName(l) : Loc.T("%@ — text recognition not installed", Loc.LanguageName(l)), (string?)l)));
+        var combo = Ui.Combo(options, source, v => _f.SetBookLanguage(v));
+        combo.HorizontalAlignment = HorizontalAlignment.Stretch;
+        System.Windows.Automation.AutomationProperties.SetName(combo, Loc.T("Book's language"));
+
+        var detectFailed = job is { Phase: TranslationPhase.Failed, Reason: TranslationStopReason.CouldNotDetectLanguage }
+            || (job is { Phase: TranslationPhase.Failed, Reason: TranslationStopReason.UnsupportedPair } && source is not null && source == job.Target);
+        var notReadable = source is not null && !Readable(source);
+        var holder = new Border { Child = combo, CornerRadius = new CornerRadius(8), Margin = new Thickness(0, 4, 0, 0) };
+        if (detectFailed || notReadable)
+        {
+            holder.BorderThickness = new Thickness(2);
+            holder.SetResourceReference(Border.BorderBrushProperty, "Brush.Accent");
+        }
+        panel.Children.Add(holder);
+
+        if (detectFailed)
+        {
+            panel.Children.Add(Spaced(Ui.Caption("⚠ " + (job!.ReasonMessage ?? Loc.T("Choose the language the book is written in."))), 6));
+        }
+        else if (notReadable)
+        {
+            panel.Children.Add(Spaced(Ui.Caption("⚠ " + recognizer.GetCapability(source!).Reason), 6));
+        }
+        else if (source is null)
+        {
+            panel.Children.Add(Spaced(Ui.Caption(Loc.T("The book's language is detected when translation starts.")), 4));
+        }
+        else if (TranslationLanguages.IsCjkVertical(source) && !(recognizer is ModelTextRecognizer models && (models.IsModelReady(source) || models.GetCapability(source).Status != CapabilityStatus.Unavailable)))
+        {
+            // Windows 글자 인식(Windows.Media.Ocr)은 가로 줄 중심이라 세로쓰기 대사를 읽지 못하는 경우가 많다(이 PC 실측: 세로 일본어 0자)
+            panel.Children.Add(Spaced(Ui.Caption(Loc.T("Windows text recognition reads horizontal lines. Vertical (top-to-bottom) text may not be recognized, so some balloons can stay untranslated.")), 4));
+        }
+
+        // 글자 인식이 없는 언어가 문제일 때: Windows 언어 설정 열기 + 설치 후 다시 확인
+        if (detectFailed && TranslationLanguages.All.Any(l => !Readable(l)) || notReadable)
+        {
+            var settings = Ui.Button(Loc.T("Open Windows Language Settings"), OpenWindowsLanguageSettings);
+            var recheck = Ui.Button(Loc.T("Check Again"), () => { _f.RecheckTextRecognition(); Rebuild(); });
+            recheck.Margin = new Thickness(8, 0, 0, 0);
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+            row.Children.Add(settings);
+            row.Children.Add(recheck);
+            panel.Children.Add(row);
+        }
+        return panel;
+    }
+
+    private static void OpenWindowsLanguageSettings()
+    {
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:regionlanguage") { UseShellExecute = true }); }
+        catch (Exception) { /* 설정 앱이 없는 환경: 안내 문구로 대신한다 */ }
+    }
+
     private StackPanel BuildBookSection(int pageCount, string? source)
     {
         var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
         var services = _f.Service;
-        panel.Children.Add(Ui.Caption(Loc.T("Book's Language")));
-        var options = new List<(string, string?)> { (Loc.T("Detect Automatically"), null) };
-        options.AddRange(TranslationLanguages.All.Select(l => (Loc.LanguageName(l), (string?)l)));
-        var combo = Ui.Combo(options, source, v => _f.SetBookLanguage(v));
-        combo.Margin = new Thickness(0, 4, 0, 0);
-        panel.Children.Add(combo);
 
         var series = _f.Book is null ? null : services.State.GetSeries(_f.Book.SeriesKey);
         var auto = Ui.Toggle(Loc.T("Translate This Series Automatically"), series?.AutoTranslate == true, on => _f.SetAutoTranslate(on));
         auto.ToolTip = Loc.T("Translates this book first, then the other volumes of the series in the background.");
-        auto.Margin = new Thickness(0, 10, 0, 0);
         panel.Children.Add(auto);
 
         var (queue, _) = _f.SeriesVolumes(filterByStem: true);
