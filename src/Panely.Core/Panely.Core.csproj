@@ -1,0 +1,29 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <RootNamespace>Panely.Core</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Panely.Domain\Panely.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\docs\windows\localization.catalog.json" LogicalName="Panely.localization.catalog.json" Link="Localization\localization.catalog.json" />
+    <EmbeddedResource Include="Localization\Strings\*.json" LogicalName="Panely.strings.%(Filename).json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Panely.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.31.0" />
+    <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.1" />
+    <PackageReference Include="SharpCompress" Version="0.50.5" />
+  </ItemGroup>
+
+</Project>
+

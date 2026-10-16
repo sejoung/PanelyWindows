@@ -1,0 +1,33 @@
+{
+  // 공통 Windows 문구. 원본 catalog의 macOS 표현을 대체하거나 새 문구를 추가한다.
+  // 형식: "English source key": { "en": "...", "ko": "..." }
+  "Japanese": { "en": "Japanese", "ko": "일본어" },
+  "Chinese (Simplified)": { "en": "Chinese (Simplified)", "ko": "중국어(간체)" },
+  "Chinese (Traditional)": { "en": "Chinese (Traditional)", "ko": "중국어(번체)" },
+  "Korean": { "en": "Korean", "ko": "한국어" },
+  "English": { "en": "English", "ko": "영어" },
+  "Open a folder or comic archive to start reading.": { "en": "Open a folder or comic archive to start reading.", "ko": "폴더나 만화 압축 파일을 열어 읽기를 시작하세요." },
+  "This book changed on disk.": { "en": "This book changed on disk.", "ko": "디스크에서 이 책이 변경되었습니다." },
+  "Couldn't read this page.": { "en": "Couldn't read this page.", "ko": "이 페이지를 읽을 수 없습니다." },
+  "Download the {0} → {1} language pack.": { "en": "Download the %1$@ → %2$@ language pack.", "ko": "%1$@ → %2$@ 언어팩을 다운로드하세요." },
+  "This model can't run on this PC: %@": { "en": "This model can't run on this PC: %@", "ko": "이 PC에서 모델을 실행할 수 없습니다: %@" },
+  "Preparing models…": { "en": "Preparing models…", "ko": "모델 준비 중…" },
+  "Delete your edits in every book?": { "en": "Delete your edits in every book?", "ko": "모든 책에서 직접 수정한 내용을 삭제할까요?" },
+  "Reveal in Finder": { "en": "Show in Explorer", "ko": "탐색기에서 보기" },
+  "Show in Finder": { "en": "Show in Explorer", "ko": "탐색기에서 보기" },
+  "Show in Explorer": { "en": "Show in Explorer", "ko": "탐색기에서 보기" },
+  "Quit Panely": { "en": "Exit", "ko": "종료" },
+  "Exit": { "en": "Exit", "ko": "종료" },
+  "Hide Panely": { "en": "Minimize", "ko": "최소화" },
+  "Your text leaves your Mac only when you give it to a chat. Changed balloons count as your edits: each can go back to the machine translation.": {
+    "en": "Your text leaves this PC only when you give it to a chat. Changed balloons count as your edits: each can go back to the machine translation.",
+    "ko": "채팅에 직접 건넬 때만 텍스트가 이 PC 밖으로 나갑니다. 바뀐 말풍선은 직접 수정으로 취급되며 각각 기계 번역으로 되돌릴 수 있습니다."
+  },
+  "This removes Panely's recent file log. It does not clear OSLog, cache data, recent files, bookmarks, favorites, or reading position.": {
+    "en": "This removes Panely's recent file log. It does not clear Windows event logs, cache data, recent files, bookmarks, favorites, or reading position.",
+    "ko": "Panely의 최근 파일 로그를 삭제합니다. Windows 이벤트 로그, 캐시, 최근 파일, 북마크, 즐겨찾기, 읽던 위치는 지우지 않습니다."
+  },
+  "Windows version": { "en": "Windows version", "ko": "Windows 버전" },
+  "Build": { "en": "Build", "ko": "빌드" },
+  "Session ID": { "en": "Session ID", "ko": "세션 ID" }
+}

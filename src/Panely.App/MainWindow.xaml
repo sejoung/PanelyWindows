@@ -1,0 +1,114 @@
+﻿<Window x:Class="Panely.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="clr-namespace:Panely.App.Controls"
+        xmlns:r="clr-namespace:Panely.App.Reader"
+        xmlns:sh="clr-namespace:Panely.App.Shell"
+        Title="Panely" Width="1280" Height="860"
+        Style="{StaticResource Panely.Window}" Background="{DynamicResource Brush.BgPrimary}"
+        Icon="pack://application:,,,/Assets/Panely.ico"
+        AllowDrop="True" UseLayoutRounding="True" WindowStartupLocation="CenterScreen">
+    <DockPanel>
+        <Menu x:Name="MainMenu" DockPanel.Dock="Top" Padding="4,2" BorderBrush="{DynamicResource Brush.BorderSubtle}" BorderThickness="0,0,0,1" />
+        <Grid x:Name="Root">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="LibraryColumn" Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <Border x:Name="PinnedLibraryHost" Grid.Column="0" />
+
+            <Grid x:Name="ViewerArea" Grid.Column="1" ClipToBounds="True" Background="{DynamicResource Brush.BgPrimary}">
+                <r:ViewerControl x:Name="Viewer" />
+
+                <!-- 번역 팝오버/편집 바(번역 모듈 소유). Background 없음 = 빈 곳은 뷰어로 통과 -->
+                <Canvas x:Name="FeatureLayer" />
+
+                <!-- 빈 리더 -->
+                <StackPanel x:Name="EmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420">
+                    <Image Source="pack://application:,,,/Assets/panely-256.png" Width="96" Height="96" Opacity="0.9" Margin="0,0,0,16" />
+                    <TextBlock x:Name="EmptyText" Style="{StaticResource Text.Body}" TextAlignment="Center" Foreground="{DynamicResource Brush.TextSecondary}" />
+                    <Button x:Name="EmptyOpenButton" Style="{StaticResource Panely.AccentButton}" HorizontalAlignment="Center" Margin="0,16,0,0" Padding="16,8" />
+                </StackPanel>
+
+                <!-- 번역 진행 pill: 하단 +76 -->
+                <StackPanel x:Name="ProgressLayer" VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="0,0,0,76" />
+
+                <!-- 권 카드 -->
+                <Border x:Name="PreviousCard" Style="{StaticResource Panely.Card}" Background="{DynamicResource Brush.CardBackground}" MaxWidth="360"
+                        VerticalAlignment="Top" HorizontalAlignment="Center" Margin="0,24,0,0" Visibility="Collapsed">
+                    <Border.Effect>
+                        <DropShadowEffect Color="Black" Opacity="0.35" BlurRadius="18" ShadowDepth="6" Direction="270" />
+                    </Border.Effect>
+                    <StackPanel>
+                        <TextBlock x:Name="PreviousEyebrow" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextSecondary}" />
+                        <TextBlock x:Name="PreviousTitle" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextPrimary}" TextTrimming="CharacterEllipsis" Margin="0,2,0,2" />
+                        <TextBlock x:Name="PreviousHint" FontSize="11" Foreground="{DynamicResource Brush.TextSecondary}" TextWrapping="Wrap" />
+                        <Button x:Name="PreviousOpen" Style="{StaticResource Panely.Button}" HorizontalAlignment="Left" Margin="0,10,0,0" Padding="12,8" />
+                    </StackPanel>
+                </Border>
+                <Border x:Name="NextCard" Style="{StaticResource Panely.Card}" Background="{DynamicResource Brush.CardBackground}" MaxWidth="360"
+                        VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="0,0,0,24" Visibility="Collapsed">
+                    <Border.Effect>
+                        <DropShadowEffect Color="Black" Opacity="0.35" BlurRadius="18" ShadowDepth="6" Direction="270" />
+                    </Border.Effect>
+                    <StackPanel>
+                        <TextBlock x:Name="NextEyebrow" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextSecondary}" />
+                        <TextBlock x:Name="NextTitle" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextPrimary}" TextTrimming="CharacterEllipsis" Margin="0,2,0,2" />
+                        <TextBlock x:Name="NextHint" FontSize="11" Foreground="{DynamicResource Brush.TextSecondary}" TextWrapping="Wrap" />
+                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                            <Button x:Name="NextOpen" Style="{StaticResource Panely.AccentButton}" Padding="12,8" />
+                            <Button x:Name="RestartButton" Style="{StaticResource Panely.Button}" Padding="12,8" Margin="8,0,0,0" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- 슬라이더(하단) -->
+                <c:PageSlider x:Name="Slider" />
+
+                <!-- 플로팅 툴바 호스트(위쪽, 양쪽 inset 12) -->
+                <Border x:Name="ToolbarHost" VerticalAlignment="Top" Margin="12,12,12,0" />
+
+                <!-- 상태 배너: top +60 -->
+                <Border x:Name="Banner" VerticalAlignment="Top" HorizontalAlignment="Center" Margin="16,60,16,0" MaxWidth="640" Visibility="Collapsed"
+                        Background="{DynamicResource Brush.BgSecondary}" BorderBrush="{DynamicResource Brush.BorderSubtle}" BorderThickness="1" CornerRadius="10" Padding="12,8">
+                    <Border.Effect>
+                        <DropShadowEffect Color="Black" Opacity="0.35" BlurRadius="14" ShadowDepth="3" Direction="270" />
+                    </Border.Effect>
+                    <DockPanel>
+                        <c:IconGlyph x:Name="BannerIcon" DockPanel.Dock="Left" Glyph="{x:Static c:Icons.Info}" Width="16" Height="16" Margin="0,0,10,0" VerticalAlignment="Center" />
+                        <StackPanel x:Name="BannerActions" DockPanel.Dock="Right" Orientation="Horizontal" Margin="12,0,0,0" VerticalAlignment="Center" />
+                        <TextBlock x:Name="BannerText" Style="{StaticResource Text.Body}" VerticalAlignment="Center" />
+                    </DockPanel>
+                </Border>
+
+                <!-- 자동 숨김 라이브러리 hot edge: 왼쪽 12 DIP, 표시 선 3 accent α.35 -->
+                <Border x:Name="HotEdge" Width="12" HorizontalAlignment="Left" Background="Transparent" Visibility="Collapsed">
+                    <Border x:Name="HotEdgeIndicator" Width="3" HorizontalAlignment="Left" Background="{DynamicResource Brush.HotEdge}" Opacity="0" />
+                </Border>
+            </Grid>
+
+            <Border x:Name="ThumbnailHost" Grid.Column="2" />
+
+            <!-- 자동 숨김 라이브러리 오버레이: 뷰어 위로 덮고 페이지 위치/배율을 바꾸지 않는다 -->
+            <Border x:Name="LibraryOverlay" Grid.Column="0" Grid.ColumnSpan="3" HorizontalAlignment="Left" Visibility="Collapsed" Panel.ZIndex="10">
+                <Border.Effect>
+                    <DropShadowEffect Color="Black" Opacity="0.45" BlurRadius="14" ShadowDepth="4" Direction="0" />
+                </Border.Effect>
+            </Border>
+
+            <!-- 전역 로딩 차폐 -->
+            <Grid x:Name="LoadingScrim" Grid.ColumnSpan="3" Background="{DynamicResource Brush.Scrim}" Visibility="Collapsed" Panel.ZIndex="20">
+                <Border HorizontalAlignment="Center" VerticalAlignment="Center" Background="{DynamicResource Brush.BgSecondary}" CornerRadius="12" Padding="16,12"
+                        BorderBrush="{DynamicResource Brush.BorderSubtle}" BorderThickness="1">
+                    <StackPanel Orientation="Horizontal">
+                        <c:Spinner x:Name="LoadingSpinner" Width="18" Height="18" Margin="0,0,10,0" VerticalAlignment="Center" />
+                        <TextBlock x:Name="LoadingText" Style="{StaticResource Text.Base}" VerticalAlignment="Center" />
+                        <Button x:Name="LoadingCancel" Style="{StaticResource Panely.LinkButton}" Margin="14,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Grid>
+    </DockPanel>
+</Window>

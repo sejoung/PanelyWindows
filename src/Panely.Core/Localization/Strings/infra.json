@@ -1,0 +1,9 @@
+{
+  // 파일·아카이브·저장 계층 문구(Core infrastructure)
+  "Unsupported file type: %@": { "en": "Unsupported file type: %@", "ko": "지원하지 않는 파일 형식입니다: %@" },
+  "The archive is damaged: %@": { "en": "The archive is damaged: %@", "ko": "압축 파일이 손상되었습니다: %@" },
+  "Archive has too many files (more than %lld).": { "en": "Archive has too many files (more than %lld).", "ko": "압축 파일 안의 파일이 너무 많습니다(%lld개 초과)." },
+  "Panely doesn't have permission to read “%@”.": { "en": "Panely doesn't have permission to read “%@”.", "ko": "“%@”을(를) 읽을 권한이 없습니다." },
+  "This file or folder can't be found.": { "en": "This file or folder can't be found.", "ko": "파일이나 폴더를 찾을 수 없습니다." },
+  "Failed to load %@": { "en": "Failed to load %@", "ko": "%@을(를) 불러오지 못했습니다." }
+}

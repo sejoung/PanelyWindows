@@ -1,0 +1,79 @@
+{
+  // 번역 기능의 Windows 전용 문구(원본 catalog에 없는 새 문장, macOS 조건 대체).
+  "%@ failed its checksum check.": { "en": "%@ failed its checksum check.", "ko": "%@ 파일의 체크섬 검증에 실패했습니다." },
+  "%@ is larger than its manifest says.": { "en": "%@ is larger than its manifest says.", "ko": "%@ 파일이 manifest에 적힌 크기보다 큽니다." },
+  "Correct translations, fix misread originals and hide balloons, right on the page (%@)": {
+    "en": "Correct translations, fix misread originals and hide balloons, right on the page (%@)",
+    "ko": "페이지 위에서 바로 번역을 고치고, 잘못 읽은 원문을 바로잡고, 말풍선을 숨깁니다 (%@)"
+  },
+  "Developer test provider": { "en": "Developer test provider", "ko": "개발자 테스트 공급자" },
+  "Fast uses a smaller, quantized model; Accurate uses the full-precision model with a wider search and takes longer. Each mode downloads its own language pack.": {
+    "en": "Fast uses a smaller, quantized model; Accurate uses the full-precision model with a wider search and takes longer. Each mode downloads its own language pack.",
+    "ko": "빠름은 더 작은 양자화 모델을, 정확은 전체 정밀도 모델과 더 넓은 탐색을 사용해 더 오래 걸립니다. 모드마다 언어팩을 따로 내려받습니다."
+  },
+  "From page": { "en": "From page", "ko": "시작 페이지" },
+  "To page": { "en": "To page", "ko": "끝 페이지" },
+  "Hide this balloon — for text that isn't really there. Edit Balloons (%@) shows hidden ones again.": {
+    "en": "Hide this balloon — for text that isn't really there. Edit Balloons (%@) shows hidden ones again.",
+    "ko": "실제로 없는 글자일 때 이 말풍선을 숨깁니다. 말풍선 편집(%@)에서 숨긴 말풍선을 다시 볼 수 있습니다."
+  },
+  "Ignored %lld lines with ids that weren't in the file.": { "en": "Ignored %lld lines with ids that weren't in the file.", "ko": "파일에 없던 ID의 줄 %lld개는 무시했습니다." },
+  "Japanese ↔ Korean: endings are rewritten to match the original's speech level; a rewrite is used only if it keeps the same words.": {
+    "en": "Japanese ↔ Korean: endings are rewritten to match the original's speech level; a rewrite is used only if it keeps the same words.",
+    "ko": "일본어 ↔ 한국어: 원문의 말투에 맞게 어미를 고쳐 씁니다. 같은 단어를 유지할 때만 고친 문장을 사용합니다."
+  },
+  "Not available in this build: the model isn't bundled or verified yet.": {
+    "en": "Not available in this build: the model isn't bundled or verified yet.",
+    "ko": "이 빌드에서는 사용할 수 없습니다: 모델이 포함되지 않았거나 아직 검증되지 않았습니다."
+  },
+  "Panely can't write to that folder.": { "en": "Panely can't write to that folder.", "ko": "그 폴더에 쓸 수 없습니다." },
+  "The disk is full.": { "en": "The disk is full.", "ko": "디스크 공간이 부족합니다." },
+  "Runs in the background — keep reading. Follow it in Window › Jobs (%@).": {
+    "en": "Runs in the background — keep reading. Follow it in Window › Jobs (%@).",
+    "ko": "백그라운드에서 실행되니 계속 읽으세요. 창 › 작업(%@)에서 진행을 볼 수 있습니다."
+  },
+  "Runs in the background — keep reading. Untranslated pages are translated first, which can take a while. Follow it in Window › Jobs (%@).": {
+    "en": "Runs in the background — keep reading. Untranslated pages are translated first, which can take a while. Follow it in Window › Jobs (%@).",
+    "ko": "백그라운드에서 실행되니 계속 읽으세요. 번역되지 않은 페이지를 먼저 번역하므로 시간이 걸릴 수 있습니다. 창 › 작업(%@)에서 진행을 볼 수 있습니다."
+  },
+  "Shift+Enter for a new line": { "en": "Shift+Enter for a new line", "ko": "Shift+Enter로 줄바꿈" },
+  "Speech-level matching needs a verified on-device rewriting model, which this Windows build doesn't include yet. Translations are shown as the translation model produced them.": {
+    "en": "Speech-level matching needs a verified on-device rewriting model, which this Windows build doesn't include yet. Translations are shown as the translation model produced them.",
+    "ko": "말투 맞춤에는 검증된 기기 내 고쳐 쓰기 모델이 필요한데, 이 Windows 빌드에는 아직 포함되어 있지 않습니다. 번역 모델이 만든 번역을 그대로 표시합니다."
+  },
+  "Text recognition (Windows OCR)": { "en": "Text recognition (Windows OCR)", "ko": "글자 인식(Windows OCR)" },
+  "Text recognition for %@ isn't installed. Add the language (with its optical character recognition feature) in Windows Settings › Time & language › Language & region, then try again.": {
+    "en": "Text recognition for %@ isn't installed. Add the language (with its optical character recognition feature) in Windows Settings › Time & language › Language & region, then try again.",
+    "ko": "%@ 글자 인식이 설치되어 있지 않습니다. Windows 설정 › 시간 및 언어 › 언어 및 지역에서 해당 언어(광학 문자 인식 기능 포함)를 추가한 뒤 다시 시도하세요."
+  },
+  "The balloon detector model isn't available.": { "en": "The balloon detector model isn't available.", "ko": "말풍선 탐지 모델을 사용할 수 없습니다." },
+  "The balloon detector model isn't bundled or verified yet. Balloons are grouped from the recognized text instead.": {
+    "en": "The balloon detector model isn't bundled or verified yet. Balloons are grouped from the recognized text instead.",
+    "ko": "말풍선 탐지 모델이 포함되지 않았거나 아직 검증되지 않았습니다. 대신 인식한 글자로 말풍선을 묶습니다."
+  },
+  "The translation model isn't available.": { "en": "The translation model isn't available.", "ko": "번역 모델을 사용할 수 없습니다." },
+  "The translation model isn't bundled or verified for this PC yet, so this build can't translate. (%@)": {
+    "en": "The translation model isn't bundled or verified for this PC yet, so this build can't translate. (%@)",
+    "ko": "번역 모델이 이 PC용으로 포함되지 않았거나 아직 검증되지 않아 이 빌드에서는 번역할 수 없습니다. (%@)"
+  },
+  "This model package can't be installed because it isn't verified yet (%@).": {
+    "en": "This model package can't be installed because it isn't verified yet (%@).",
+    "ko": "아직 검증되지 않은 모델 패키지라 설치할 수 없습니다 (%@)."
+  },
+  "Windows text recognition isn't available on this PC: %@": { "en": "Windows text recognition isn't available on this PC: %@", "ko": "이 PC에서는 Windows 글자 인식을 사용할 수 없습니다: %@" },
+
+  // 원본 문구 중 macOS 표현을 바꾼 것
+  "Preparing translation models — the first time takes 1–2 minutes…": { "en": "Preparing models…", "ko": "모델 준비 중…" },
+  "Fast translates a volume in about a minute. Accurate reads idioms and nuance better but takes about 20 times as long. Each mode downloads its own language packs.": {
+    "en": "Fast uses a smaller, quantized model; Accurate uses the full-precision model with a wider search and takes longer. Each mode downloads its own language pack.",
+    "ko": "빠름은 더 작은 양자화 모델을, 정확은 전체 정밀도 모델과 더 넓은 탐색을 사용해 더 오래 걸립니다. 모드마다 언어팩을 따로 내려받습니다."
+  },
+  "Language packs are downloaded from the translation panel the first time a book is translated. Manage downloaded packs in System Settings › General › Language & Region › Translation Languages.": {
+    "en": "Language packs are downloaded from the translation panel the first time a book is translated. Manage downloaded packs in Settings › Experimental.",
+    "ko": "언어팩은 처음 책을 번역할 때 번역 패널에서 내려받습니다. 내려받은 팩은 설정 › 실험에서 관리합니다."
+  },
+  "Show Original (⇧⌘T)": { "en": "Show Original (Ctrl+Shift+T)", "ko": "원본 보기 (Ctrl+Shift+T)" },
+  "Show Translation (⇧⌘T)": { "en": "Show Translation (Ctrl+Shift+T)", "ko": "번역 보기 (Ctrl+Shift+T)" },
+  "Show Jobs (⌥⌘J)": { "en": "Show Jobs (Ctrl+Alt+J)", "ko": "작업 보기 (Ctrl+Alt+J)" },
+  "Finished Jobs": { "en": "Finished", "ko": "완료됨" }
+}

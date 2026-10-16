@@ -1,0 +1,78 @@
+{
+  // 리더·셸·설정 Windows 문구. 원본의 macOS 단축키 접미사(⌘ 등)는 빼고 CommandRegistry가 Windows 단축키를 붙인다.
+  "A local comic and image reader for Windows. Original design and assets: Copyright 2026 beni kim, licensed under the Apache License 2.0. Third-party components: SharpCompress (MIT), ONNX Runtime (MIT), Microsoft.ML.Tokenizers (MIT), Magick.NET (Apache-2.0).": {
+    "en": "A local comic and image reader for Windows. Original design and assets: Copyright 2026 beni kim, licensed under the Apache License 2.0. Third-party components: SharpCompress (MIT), ONNX Runtime (MIT), Microsoft.ML.Tokenizers (MIT), Magick.NET (Apache-2.0).",
+    "ko": "Windows용 로컬 만화·이미지 리더입니다. 원본 디자인과 자산: Copyright 2026 beni kim, Apache License 2.0. 서드파티 구성요소: SharpCompress(MIT), ONNX Runtime(MIT), Microsoft.ML.Tokenizers(MIT), Magick.NET(Apache-2.0)."
+  },
+  "Add to File Explorer": { "en": "Add to File Explorer", "ko": "파일 탐색기에 추가" },
+  "Remove from File Explorer": { "en": "Remove from File Explorer", "ko": "파일 탐색기에서 제거" },
+  "Add “Open with Panely” for CBZ, CBR, ZIP and RAR files and folders. Default apps for ZIP and RAR aren't changed.": {
+    "en": "Add “Open with Panely” for CBZ, CBR, ZIP and RAR files and folders. Default apps for ZIP and RAR aren't changed.",
+    "ko": "CBZ·CBR·ZIP·RAR 파일과 폴더에 “Panely로 열기”를 추가합니다. ZIP·RAR의 기본 앱은 바꾸지 않습니다."
+  },
+  "CBZ, CBR, ZIP and RAR files offer “Open with Panely”. Default apps for ZIP and RAR aren't changed.": {
+    "en": "CBZ, CBR, ZIP and RAR files offer “Open with Panely”. Default apps for ZIP and RAR aren't changed.",
+    "ko": "CBZ·CBR·ZIP·RAR 파일에서 “Panely로 열기”를 쓸 수 있습니다. ZIP·RAR의 기본 앱은 바꾸지 않았습니다."
+  },
+  "All files": { "en": "All files", "ko": "모든 파일" },
+  "Comic archives": { "en": "Comic archives", "ko": "만화 압축 파일" },
+  "Images": { "en": "Images", "ko": "이미지" },
+  "Applies to new log entries only.": { "en": "Applies to new log entries only.", "ko": "이후에 기록되는 로그에만 적용됩니다." },
+  "Bookmark Current Page": { "en": "Bookmark Current Page", "ko": "현재 페이지 북마크" },
+  "Click to jump to a page": { "en": "Click to jump to a page", "ko": "클릭해서 페이지로 이동" },
+  "Failed to load": { "en": "Failed to load", "ko": "불러오지 못했습니다" },
+  "File Explorer": { "en": "File Explorer", "ko": "파일 탐색기" },
+  "File Tree": { "en": "File Tree", "ko": "파일 트리" },
+  "Fit pages again when the window is resized": { "en": "Fit pages again when the window is resized", "ko": "창 크기가 바뀌면 페이지를 다시 맞춤" },
+  "Go back once more to open it.": { "en": "Go back once more to open it.", "ko": "한 번 더 뒤로 가면 엽니다." },
+  "Turn the page once more to open it.": { "en": "Turn the page once more to open it.", "ko": "한 번 더 넘기면 엽니다." },
+  "Lock view size (don't auto-fit on resize)": { "en": "Lock view size (don't auto-fit on resize)", "ko": "보기 크기 잠금(크기 변경 시 자동 맞춤 안 함)" },
+  "Unlock view size (auto-fit on resize)": { "en": "Unlock view size (auto-fit on resize)", "ko": "보기 크기 잠금 해제(크기 변경 시 자동 맞춤)" },
+  "Menus and windows switch right away.": { "en": "Menus and windows switch right away.", "ko": "메뉴와 창이 바로 바뀝니다." },
+  "More": { "en": "More", "ko": "더 보기" },
+  "Next Page": { "en": "Next Page", "ko": "다음 페이지" },
+  "Previous Page": { "en": "Previous Page", "ko": "이전 페이지" },
+  "Open Folder, CBZ/CBR, or ZIP/RAR…": { "en": "Open Folder, CBZ/CBR, or ZIP/RAR…", "ko": "폴더, CBZ/CBR 또는 ZIP/RAR 열기…" },
+  "Panely can't read the folder this book is in, so it can't open the next and previous books.": {
+    "en": "Panely can't read the folder this book is in, so it can't open the next and previous books.",
+    "ko": "이 책이 있는 폴더를 읽을 수 없어 앞뒤 권을 열 수 없습니다."
+  },
+  "Panely doesn't have permission to read this file or folder.": { "en": "Panely doesn't have permission to read this file or folder.", "ko": "이 파일이나 폴더를 읽을 권한이 없습니다." },
+  "Pin Library Open": { "en": "Pin Library Open", "ko": "라이브러리 고정" },
+  "Read Again from the Start": { "en": "Read Again from the Start", "ko": "처음부터 다시 읽기" },
+  "Reader": { "en": "Reader", "ko": "리더" },
+  "Reading": { "en": "Reading", "ko": "읽기" },
+  "Refresh the file tree automatically": { "en": "Refresh the file tree automatically", "ko": "파일 트리 자동 새로고침" },
+  "Reports leave out full paths, your user name, recognized text and translations. Panely never sends them anywhere — you choose where to save.": {
+    "en": "Reports leave out full paths, your user name, recognized text and translations. Panely never sends them anywhere — you choose where to save.",
+    "ko": "리포트에는 전체 경로·사용자 이름·인식한 원문·번역문을 넣지 않습니다. 어디로도 자동 전송하지 않으며 저장 위치는 직접 고릅니다."
+  },
+  "Show Original": { "en": "Show Original", "ko": "원본 보기" },
+  "The file or folder could not be found.": { "en": "The file or folder could not be found.", "ko": "파일이나 폴더를 찾을 수 없습니다." },
+  "This file type isn't supported. Open a folder, CBZ/CBR, or ZIP/RAR.": { "en": "This file type isn't supported. Open a folder, CBZ/CBR, or ZIP/RAR.", "ko": "지원하지 않는 형식입니다. 폴더, CBZ/CBR 또는 ZIP/RAR을 여세요." },
+  "Too many changes to follow automatically. Click Refresh File Tree to update the list.": {
+    "en": "Too many changes to follow automatically. Click Refresh File Tree to update the list.",
+    "ko": "변경이 너무 많아 자동으로 따라갈 수 없습니다. 파일 트리 새로고침을 눌러 목록을 갱신하세요."
+  },
+  "Translation isn't available in this build.": { "en": "Translation isn't available in this build.", "ko": "이 빌드에서는 번역을 사용할 수 없습니다." },
+  "Turn pages with the scroll wheel": { "en": "Turn pages with the scroll wheel", "ko": "스크롤 휠로 페이지 넘기기" },
+  "Unavailable": { "en": "Unavailable", "ko": "사용할 수 없음" },
+  "Open Folder…": { "en": "Open Folder…", "ko": "폴더 열기…" },
+  "Forward": { "en": "Forward", "ko": "읽기 앞으로" },
+  "Backward": { "en": "Backward", "ko": "읽기 뒤로" },
+  "Reading Direction": { "en": "Reading Direction", "ko": "읽기 방향 전환" },
+  "Standalone Cover": { "en": "Standalone Cover", "ko": "표지 한 장" },
+  "Scroll Page Turning": { "en": "Scroll Page Turning", "ko": "휠 페이지 넘김" },
+  "Show Explorer": { "en": "Show in Explorer", "ko": "탐색기에서 보기" },
+  "Your saved data was created by a newer version of Panely. Changes won't be saved in this session.": {
+    "en": "Your saved data was created by a newer version of Panely. Changes won't be saved in this session.",
+    "ko": "저장된 데이터가 더 새로운 Panely 버전에서 만들어졌습니다. 이번 세션의 변경은 저장되지 않습니다."
+  },
+  "Your saved data couldn't be read, so Panely started with default settings. A copy of the old file was kept.": {
+    "en": "Your saved data couldn't be read, so Panely started with default settings. A copy of the old file was kept.",
+    "ko": "저장된 데이터를 읽을 수 없어 기본 설정으로 시작했습니다. 이전 파일의 사본은 보관했습니다."
+  },
+  "No books to show": { "en": "No books to show", "ko": "표시할 책이 없습니다" },
+  // Windows 한국어 관례: macOS의 "윈도우" 메뉴 대신 "창"
+  "Window": { "en": "Window", "ko": "창" }
+}

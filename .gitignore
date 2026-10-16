@@ -16,3 +16,10 @@ Icon
 .Trashes
 .VolumeIcon.icns
 .com.apple.timemachine.donotpresent
+### .NET
+bin/
+obj/
+*.user
+.vs/
+TestResults/
+artifacts/
