@@ -1,6 +1,6 @@
 using System.IO.Compression;
-using Panely.Core.Abstractions;
 using System.Text.Json;
+using Panely.Core.Abstractions;
 using Panely.Core.Localization;
 using Panely.Core.Translation;
 using Panely.Domain.Model;
@@ -138,7 +138,11 @@ public class ModelManifestTests
         using var dir = new TempDir();
         var placeholder = new ModelManifest
         {
-            Id = "p", Revision = "PINNED_REVISION_REQUIRED", License = "MIT", Source = "https://example.invalid/x", Mode = "detector",
+            Id = "p",
+            Revision = "PINNED_REVISION_REQUIRED",
+            License = "MIT",
+            Source = "https://example.invalid/x",
+            Mode = "detector",
             Files = [new ModelFile { Name = "m.onnx", Bytes = 0, Sha256 = "REQUIRED" }],
         };
         var store = new ModelStore(dir.Path, manifests: [placeholder]);
@@ -153,7 +157,11 @@ public class ModelManifestTests
         var sha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(payload));
         ModelManifest Manifest(string hash) => new()
         {
-            Id = "test-model", Revision = "abc123", License = "MIT", Source = "https://example.invalid/pinned/abc123", Mode = "detector",
+            Id = "test-model",
+            Revision = "abc123",
+            License = "MIT",
+            Source = "https://example.invalid/pinned/abc123",
+            Mode = "detector",
             Files = [new ModelFile { Name = "model.onnx", Bytes = payload.Length, Sha256 = hash }],
         };
         var handler = new StubHandler(payload);
@@ -174,7 +182,11 @@ public class ModelManifestTests
     {
         var m = new ModelManifest
         {
-            Id = "x", Revision = "abc", License = "MIT", Source = "https://huggingface.co/a/b/resolve/main", Mode = "detector",
+            Id = "x",
+            Revision = "abc",
+            License = "MIT",
+            Source = "https://huggingface.co/a/b/resolve/main",
+            Mode = "detector",
             Files = [new ModelFile { Name = "m", Bytes = 1, Sha256 = new string('a', 64) }],
         };
         Assert.Equal("source not pinned", m.VerificationProblem());

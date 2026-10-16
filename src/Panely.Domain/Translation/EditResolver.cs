@@ -90,9 +90,16 @@ public static class EditResolver
             {
                 result.Add(new DisplayBubble
                 {
-                    Id = b.Id, Rect = b.Rect, GlyphSize = b.GlyphSize, IsVertical = b.IsVertical, Background = b.Background,
-                    BalloonRect = b.BalloonRect, RecognizedSource = b.Source, EffectiveSource = b.Source,
-                    Text = b.Translation, State = b.Translation is null ? BubbleTextState.Pending : BubbleTextState.Machine,
+                    Id = b.Id,
+                    Rect = b.Rect,
+                    GlyphSize = b.GlyphSize,
+                    IsVertical = b.IsVertical,
+                    Background = b.Background,
+                    BalloonRect = b.BalloonRect,
+                    RecognizedSource = b.Source,
+                    EffectiveSource = b.Source,
+                    Text = b.Translation,
+                    State = b.Translation is null ? BubbleTextState.Pending : BubbleTextState.Machine,
                     MachineId = b.Id,
                 });
                 continue;
@@ -101,9 +108,19 @@ public static class EditResolver
             var (text, state) = ResolveText(edit, target, b.Translation, index, isRetranslationPending);
             result.Add(new DisplayBubble
             {
-                Id = b.Id, Rect = b.Rect, GlyphSize = b.GlyphSize, IsVertical = b.IsVertical, Background = b.Background,
-                BalloonRect = b.BalloonRect, RecognizedSource = b.Source, EffectiveSource = edit.CorrectedSource ?? b.Source,
-                Text = text, State = state, IsHidden = edit.IsHidden, EditIndex = index, MachineId = b.Id,
+                Id = b.Id,
+                Rect = b.Rect,
+                GlyphSize = b.GlyphSize,
+                IsVertical = b.IsVertical,
+                Background = b.Background,
+                BalloonRect = b.BalloonRect,
+                RecognizedSource = b.Source,
+                EffectiveSource = edit.CorrectedSource ?? b.Source,
+                Text = text,
+                State = state,
+                IsHidden = edit.IsHidden,
+                EditIndex = index,
+                MachineId = b.Id,
             });
         }
 
@@ -123,9 +140,18 @@ public static class EditResolver
                 else { text = null; state = BubbleTextState.AddedNotTranslated; }
                 result.Add(new DisplayBubble
                 {
-                    Id = AddedIdBase + i, Rect = e.Rect, GlyphSize = added.GlyphSize, IsVertical = added.IsVertical,
-                    Background = added.Background, RecognizedSource = e.RecognizedSource, EffectiveSource = source,
-                    Text = text, State = state, IsHidden = e.IsHidden, IsAdded = true, EditIndex = i,
+                    Id = AddedIdBase + i,
+                    Rect = e.Rect,
+                    GlyphSize = added.GlyphSize,
+                    IsVertical = added.IsVertical,
+                    Background = added.Background,
+                    RecognizedSource = e.RecognizedSource,
+                    EffectiveSource = source,
+                    Text = text,
+                    State = state,
+                    IsHidden = e.IsHidden,
+                    IsAdded = true,
+                    EditIndex = i,
                 });
             }
         }

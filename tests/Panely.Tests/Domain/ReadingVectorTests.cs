@@ -235,24 +235,24 @@ public class ReadingVectorTests
     public void Spread_exhaustive_invariants()
     {
         foreach (var n in new[] { 0, 1, 2, 5, 6, 7 })
-        foreach (var step in new[] { 1, 2 })
-        foreach (var cover in new[] { false, true })
-        {
-            var starts = new List<int>();
-            var index = 0;
-            while (n > 0)
-            {
-                var s = SpreadCalculator.Spread(index, n, step, cover);
-                starts.Add(s.Start);
-                Assert.True(s.Length is 1 or 2);
-                for (var k = s.Start; k < s.End; k++)
-                    Assert.Equal(s, SpreadCalculator.Spread(k, n, step, cover));
-                var next = SpreadCalculator.NextStart(index, n, step, cover);
-                if (next is null) { Assert.Equal(n, s.End); break; }
-                Assert.Equal(s.Start, SpreadCalculator.PreviousStart(next.Value, n, step, cover));
-                index = next.Value;
-            }
-        }
+            foreach (var step in new[] { 1, 2 })
+                foreach (var cover in new[] { false, true })
+                {
+                    var starts = new List<int>();
+                    var index = 0;
+                    while (n > 0)
+                    {
+                        var s = SpreadCalculator.Spread(index, n, step, cover);
+                        starts.Add(s.Start);
+                        Assert.True(s.Length is 1 or 2);
+                        for (var k = s.Start; k < s.End; k++)
+                            Assert.Equal(s, SpreadCalculator.Spread(k, n, step, cover));
+                        var next = SpreadCalculator.NextStart(index, n, step, cover);
+                        if (next is null) { Assert.Equal(n, s.End); break; }
+                        Assert.Equal(s.Start, SpreadCalculator.PreviousStart(next.Value, n, step, cover));
+                        index = next.Value;
+                    }
+                }
     }
 
     [Fact]

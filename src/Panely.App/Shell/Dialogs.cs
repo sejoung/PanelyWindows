@@ -99,7 +99,7 @@ public sealed class GoToPageDialog : PanelyDialog
         Title = Loc.T("Go to Page");
         var panel = new StackPanel { Margin = new Thickness(20), Width = 300 };
         panel.Children.Add(new TextBlock { Text = Loc.T("Enter a page number (1 – %lld):", (long)total), Style = (Style)FindResource("Text.Body") });
-        _input = new TextBox { Text = current.ToString(), Margin = new Thickness(0, 10, 0, 0) };
+        _input = new TextBox { Text = current.ToString(System.Globalization.CultureInfo.InvariantCulture), Margin = new Thickness(0, 10, 0, 0) };
         _input.KeyDown += (_, e) => { if (e.Key == Key.Enter) { Commit(); e.Handled = true; } };
         panel.Children.Add(_input);
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
@@ -137,7 +137,9 @@ public sealed class AboutWindow : PanelyDialog
         panel.Children.Add(new Image
         {
             Source = new System.Windows.Media.Imaging.BitmapImage(new Uri("pack://application:,,,/Assets/panely-256.png")),
-            Width = 96, Height = 96, HorizontalAlignment = HorizontalAlignment.Center,
+            Width = 96,
+            Height = 96,
+            HorizontalAlignment = HorizontalAlignment.Center,
         });
         panel.Children.Add(new TextBlock { Text = "Panely", Style = (Style)FindResource("Text.Title"), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 12, 0, 0) });
         panel.Children.Add(new TextBlock { Text = $"{Loc.T("App version")} {AppInfo.Version} · {Loc.T("Build")} {AppInfo.Build}", Style = (Style)FindResource("Text.Caption"), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 4, 0, 12) });

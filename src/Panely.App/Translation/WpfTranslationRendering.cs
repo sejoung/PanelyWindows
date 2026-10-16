@@ -72,7 +72,8 @@ public sealed class WpfTranslationRenderer : ITranslatedPageRenderer, IDisposabl
             dispatcher = Dispatcher.CurrentDispatcher;
             ready.Set();
             Dispatcher.Run();
-        }) { IsBackground = true, Name = "Panely export renderer" };
+        })
+        { IsBackground = true, Name = "Panely export renderer" };
         _thread.SetApartmentState(ApartmentState.STA);
         _thread.Start();
         ready.Wait();

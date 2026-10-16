@@ -221,7 +221,7 @@ public sealed class M2M100Translator : ITranslator, IDisposable
             foreach (var id in ids)
             {
                 if (id == Eos) break;
-                if (!_inverse.TryGetValue((int)id, out var piece) || piece.StartsWith("__") || piece is "<s>" or "<pad>" or "</s>" or "<unk>") continue;
+                if (!_inverse.TryGetValue((int)id, out var piece) || piece.StartsWith("__", StringComparison.Ordinal) || piece is "<s>" or "<pad>" or "</s>" or "<unk>") continue;
                 sb.Append(piece);
             }
             return sb.ToString().Replace('▁', ' ').Trim();

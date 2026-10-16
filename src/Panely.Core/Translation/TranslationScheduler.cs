@@ -485,9 +485,17 @@ public sealed class TranslationScheduler : IAsyncDisposable
         var bubbles = await _analyzer.AnalyzeAsync(pixels, source, ct).ConfigureAwait(false);
         var page = new TranslatedPage
         {
-            PageId = entry.PageId, SourceLanguage = source, TargetLanguage = job.Target, Scope = TranslationScope.Page, Mode = job.Mode,
-            ProviderRevision = key.ProviderRevision, AnalysisVersion = PageAnalyzer.AnalysisVersion,
-            ImageWidth = pixels.Width, ImageHeight = pixels.Height, IsComplete = false, Bubbles = bubbles,
+            PageId = entry.PageId,
+            SourceLanguage = source,
+            TargetLanguage = job.Target,
+            Scope = TranslationScope.Page,
+            Mode = job.Mode,
+            ProviderRevision = key.ProviderRevision,
+            AnalysisVersion = PageAnalyzer.AnalysisVersion,
+            ImageWidth = pixels.Width,
+            ImageHeight = pixels.Height,
+            IsComplete = false,
+            Bubbles = bubbles,
         };
         PageUpdated?.Invoke(this, new TranslationPageUpdate(book.BookKey, job.Target, pageIndex, page));
         page = await TranslateBubblesAsync(job, book.BookKey, pageIndex, page, source, ct).ConfigureAwait(false);
@@ -507,7 +515,7 @@ public sealed class TranslationScheduler : IAsyncDisposable
         foreach (var chunk in pending.Chunk(Math.Max(1, _options.TranslateChunk)))
         {
             ct.ThrowIfCancellationRequested();
-            var request = chunk.Select(b => new TranslationRequestItem(b.Id.ToString(), b.Source)).ToList();
+            var request = chunk.Select(b => new TranslationRequestItem(b.Id.ToString(System.Globalization.CultureInfo.InvariantCulture), b.Source)).ToList();
             var results = await _providers.Translator.TranslateAsync(request, source, job.Target, job.Mode, ct).ConfigureAwait(false);
             foreach (var r in results)
             {
@@ -655,9 +663,17 @@ public sealed class TranslationScheduler : IAsyncDisposable
             : list.ToList();
         return new TranslatedPage
         {
-            PageId = book.Pages[page].PageId, SourceLanguage = source, TargetLanguage = job.Target, Scope = TranslationScope.Strip, Mode = job.Mode,
-            ProviderRevision = revision, AnalysisVersion = PageAnalyzer.AnalysisVersion, ImageWidth = Math.Max(1, rect.Width), ImageHeight = Math.Max(1, rect.Height),
-            IsComplete = complete && bubbles.All(b => b.Translation is not null), Bubbles = bubbles,
+            PageId = book.Pages[page].PageId,
+            SourceLanguage = source,
+            TargetLanguage = job.Target,
+            Scope = TranslationScope.Strip,
+            Mode = job.Mode,
+            ProviderRevision = revision,
+            AnalysisVersion = PageAnalyzer.AnalysisVersion,
+            ImageWidth = Math.Max(1, rect.Width),
+            ImageHeight = Math.Max(1, rect.Height),
+            IsComplete = complete && bubbles.All(b => b.Translation is not null),
+            Bubbles = bubbles,
         };
     }
 
@@ -749,9 +765,22 @@ public sealed class TranslationScheduler : IAsyncDisposable
             remaining = TimeSpan.FromTicks(j.ProcessingTime.Ticks / j.Processed * (total - completed));
         return new TranslationJobInfo
         {
-            Book = j.Book, Target = j.Target, Source = j.Source, Mode = j.Mode, Scope = j.Scope, Phase = j.Phase, Reason = j.Reason,
-            ReasonMessage = j.ReasonMessage, CompletedPages = completed, TotalPages = total, UserPaused = j.UserPaused, AutoPaused = j.AutoPaused,
-            IsCurrentBook = j.Book.BookKey == _currentBook, Remaining = remaining, EnqueuedAt = j.Enqueued, IsActive = _active == j,
+            Book = j.Book,
+            Target = j.Target,
+            Source = j.Source,
+            Mode = j.Mode,
+            Scope = j.Scope,
+            Phase = j.Phase,
+            Reason = j.Reason,
+            ReasonMessage = j.ReasonMessage,
+            CompletedPages = completed,
+            TotalPages = total,
+            UserPaused = j.UserPaused,
+            AutoPaused = j.AutoPaused,
+            IsCurrentBook = j.Book.BookKey == _currentBook,
+            Remaining = remaining,
+            EnqueuedAt = j.Enqueued,
+            IsActive = _active == j,
         };
     }
 

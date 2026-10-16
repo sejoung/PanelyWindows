@@ -308,7 +308,13 @@ public class EditResolverTests
 
     private static TranslatedBubble Machine(int id, string source, string? tr, RectD? rect = null) => new()
     {
-        Id = id, Rect = rect ?? R, GlyphSize = 24, IsVertical = true, Source = source, Translation = tr, Background = BubbleBackground.White,
+        Id = id,
+        Rect = rect ?? R,
+        GlyphSize = 24,
+        IsVertical = true,
+        Source = source,
+        Translation = tr,
+        Background = BubbleBackground.White,
     };
 
     [Fact]
@@ -429,8 +435,16 @@ public class AiChatExchangeTests
 {
     private static DisplayBubble B(int id, string src, string? tr, bool hidden = false) => new()
     {
-        Id = id, Rect = new RectD(0, 0, 1, 1), GlyphSize = 10, IsVertical = false, Background = BubbleBackground.White,
-        RecognizedSource = src, EffectiveSource = src, Text = tr, State = BubbleTextState.Machine, IsHidden = hidden,
+        Id = id,
+        Rect = new RectD(0, 0, 1, 1),
+        GlyphSize = 10,
+        IsVertical = false,
+        Background = BubbleBackground.White,
+        RecognizedSource = src,
+        EffectiveSource = src,
+        Text = tr,
+        State = BubbleTextState.Machine,
+        IsHidden = hidden,
     };
 
     [Fact]

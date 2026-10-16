@@ -10,5 +10,10 @@
     <Product>Panely</Product>
     <Copyright>Copyright 2026 beni kim</Copyright>
     <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- 린트: .NET 분석기 권장 규칙 + .editorconfig 코드 스타일을 빌드에서 검사한다.
+         평소 빌드는 경고만, tools\verify.ps1은 -warnaserror로 경고를 실패로 처리한다. -->
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
   </PropertyGroup>
 </Project>

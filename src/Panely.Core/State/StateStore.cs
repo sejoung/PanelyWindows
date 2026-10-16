@@ -718,8 +718,14 @@ public sealed class StateStore : IStateStore, IDisposable
             _doc.ExportHistory.RemoveAll(e => e.Id == record.Id);
             _doc.ExportHistory.Insert(0, new ExportRecordDto
             {
-                Id = record.Id, Title = record.Title, Target = record.Target, Format = record.Format,
-                Path = record.Path, PageCount = record.PageCount, Bytes = record.Bytes, Date = record.Date,
+                Id = record.Id,
+                Title = record.Title,
+                Target = record.Target,
+                Format = record.Format,
+                Path = record.Path,
+                PageCount = record.PageCount,
+                Bytes = record.Bytes,
+                Date = record.Date,
             });
             if (_doc.ExportHistory.Count > MaxExportHistory) _doc.ExportHistory.RemoveRange(MaxExportHistory, _doc.ExportHistory.Count - MaxExportHistory);
             ScheduleSave(false);

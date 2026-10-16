@@ -1,4 +1,4 @@
-﻿using System.Windows;
+using System.Windows;
 using System.Windows.Threading;
 using Panely.App.Imaging;
 using Panely.App.Integration;
@@ -18,6 +18,7 @@ namespace Panely.App;
 /// Composition root(07): 경로 준비 → 진단 → 상태 → 캐시 → 열기 → 라이브러리 → 리더 창.
 /// single instance: 이미 실행 중이면 경로를 전달하고 종료한다.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1001:Types that own disposable fields should be disposable", Justification = "WPF Application 수명과 같다. OnExit에서 모든 서비스를 Dispose한다.")]
 public partial class App : Application
 {
     private SingleInstance? _instance;

@@ -48,8 +48,8 @@ public static partial class FileIdentity
             using var handle = CreateFile(extended, 0, FileShareAll, 0, OpenExisting, FileFlagBackupSemantics, 0);
             if (handle.IsInvalid) return false;
             if (!GetFileInformationByHandle(handle, out var info)) return false;
-            volumeId = info.VolumeSerialNumber.ToString("X8");
-            fileId = (((ulong)info.FileIndexHigh << 32) | info.FileIndexLow).ToString("X16");
+            volumeId = info.VolumeSerialNumber.ToString("X8", System.Globalization.CultureInfo.InvariantCulture);
+            fileId = (((ulong)info.FileIndexHigh << 32) | info.FileIndexLow).ToString("X16", System.Globalization.CultureInfo.InvariantCulture);
             return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)

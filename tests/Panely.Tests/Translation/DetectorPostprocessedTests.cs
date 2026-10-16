@@ -61,13 +61,13 @@ public class DetectorPostprocessedTests
         scaled.CopyPixels(px, 640 * 4, 0);
         var tensor = new DenseTensor<float>([1, 3, 640, 640]);
         for (var y = 0; y < 640; y++)
-        for (var x = 0; x < 640; x++)
-        {
-            var i = (y * 640 + x) * 4;
-            tensor[0, 0, y, x] = px[i + 2] / 255f;
-            tensor[0, 1, y, x] = px[i + 1] / 255f;
-            tensor[0, 2, y, x] = px[i] / 255f;
-        }
+            for (var x = 0; x < 640; x++)
+            {
+                var i = (y * 640 + x) * 4;
+                tensor[0, 0, y, x] = px[i + 2] / 255f;
+                tensor[0, 1, y, x] = px[i + 1] / 255f;
+                tensor[0, 2, y, x] = px[i] / 255f;
+            }
 
         using var session = new InferenceSession(model);
         Assert.Contains("orig_target_sizes", session.InputMetadata.Keys);

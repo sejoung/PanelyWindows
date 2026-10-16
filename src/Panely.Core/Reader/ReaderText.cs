@@ -41,13 +41,13 @@ public static class ReaderText
 
     /// <summary>`Vol 1 / 3 · 5-6 / 24` 형식의 오른쪽 부분(쪽 범위 문자열).</summary>
     public static string PageRangeText(PageRange spread)
-        => spread.Length <= 1 ? (spread.Start + 1).ToString() : $"{spread.Start + 1}-{spread.End}";
+        => spread.Length <= 1 ? (spread.Start + 1).ToString(System.Globalization.CultureInfo.InvariantCulture) : $"{spread.Start + 1}-{spread.End}";
 
     public static string VolumePrefix(int volumeIndex, int volumeCount)
         => volumeIndex >= 0 && volumeCount > 1 ? Loc.T("Vol %lld / %lld", volumeIndex + 1, volumeCount) + " · " : string.Empty;
 
     /// <summary>입력창 폭: max(32, digits(total)×9+10).</summary>
-    public static double JumpInputWidth(int total) => Math.Max(32, Math.Max(1, total).ToString().Length * 9 + 10);
+    public static double JumpInputWidth(int total) => Math.Max(32, Math.Max(1, total).ToString(System.Globalization.CultureInfo.InvariantCulture).Length * 9 + 10);
 
     /// <summary>quick jump 입력 해석: 유효 정수만, 범위 밖 clamp, 잘못되면 null(원래 쪽 유지).</summary>
     public static int? ParsePageNumber(string? text, int total)

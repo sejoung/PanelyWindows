@@ -31,7 +31,7 @@ public sealed class ThumbItem : INotifyPropertyChanged
     }
 
     public int Index { get; }
-    public string Caption => (Index + 1).ToString();
+    public string Caption => (Index + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
     public string Tooltip => Loc.T("Page %lld", Index + 1);
 
     /// <summary>알려진 h/w를 .3..3으로 clamp, 미상은 1.5.</summary>
@@ -79,6 +79,7 @@ public sealed class ThumbItem : INotifyPropertyChanged
 /// 오른쪽 미리보기 목록(02): 폭 148, 이미지 폭 112, 셀 간격·padding 8, radius 4, 활성 테두리 accent 2.
 /// 가상화(천 쪽도 보이는 셀만 생성), 활성 셀을 가운데로 자동 스크롤, 번역 완료 원형 배지.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1001:Types that own disposable fields should be disposable", Justification = "주 창과 수명이 같은 컨트롤. SemaphoreSlim은 WaitAsync만 쓰므로 해제할 대기 핸들이 없다.")]
 public partial class ThumbnailPanel : UserControl
 {
     private const int MaxCached = 300;

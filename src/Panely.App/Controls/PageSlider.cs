@@ -259,7 +259,7 @@ public sealed class PageSlider : Grid
     {
         if (_total <= 0) return;
         _input.Width = ReaderText.JumpInputWidth(_total);
-        _input.Text = (_track.Value + 1).ToString("0");
+        _input.Text = (_track.Value + 1).ToString("0", System.Globalization.CultureInfo.InvariantCulture);
         _rangeButton.Visibility = Visibility.Collapsed;
         _input.Visibility = Visibility.Visible;
         _input.Focus();

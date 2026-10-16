@@ -13,6 +13,7 @@ using Panely.Domain.Model;
 
 namespace Panely.App;
 
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1001:Types that own disposable fields should be disposable", Justification = "창 수명과 같다. OnClosing에서 _session·_cache를 Dispose한다.")]
 public partial class MainWindow
 {
     public const string OpenFolderId = "file.openFolder";
@@ -246,17 +247,17 @@ public partial class MainWindow
             ["sourceKind"] = book?.Source.Kind.ToString() ?? "-",
             ["extension"] = book is null ? "-" : SupportedFormats.ExtensionOf(book.Source.Path),
             ["nested"] = (book?.IsNestedCacheBook ?? false).ToString(),
-            ["pageCount"] = _session.PageCount.ToString(),
-            ["pageIndex"] = _session.PageIndex.ToString(),
-            ["volumes"] = (book?.Volumes.Count ?? 0).ToString(),
+            ["pageCount"] = _session.PageCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["pageIndex"] = _session.PageIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["volumes"] = (book?.Volumes.Count ?? 0).ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["layout"] = _session.Layout.ToString(),
-            ["zoom"] = Viewer.Zoom.Zoom.ToString("0.###"),
-            ["baseline"] = Viewer.Zoom.Baseline.ToString("0.###"),
+            ["zoom"] = Viewer.Zoom.Zoom.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
+            ["baseline"] = Viewer.Zoom.Baseline.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
             ["loading"] = _session.IsLoading.ToString(),
             ["lastError"] = _session.LastError?.Kind.ToString() ?? "-",
-            ["imageBudgetMiB"] = (_cache.BudgetBytes / 1024 / 1024).ToString(),
-            ["imageCostMiB"] = (_cache.TotalCost / 1024 / 1024).ToString(),
-            ["decodeConcurrency"] = _cache.Concurrency.ToString(),
+            ["imageBudgetMiB"] = (_cache.BudgetBytes / 1024 / 1024).ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["imageCostMiB"] = (_cache.TotalCost / 1024 / 1024).ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["decodeConcurrency"] = _cache.Concurrency.ToString(System.Globalization.CultureInfo.InvariantCulture),
         };
         return new DiagnosticSnapshot(AppInfo.Version, AppInfo.Build, AppInfo.OsVersion, _services.ExtractionCache.GetUsage(), settings, reader);
     }

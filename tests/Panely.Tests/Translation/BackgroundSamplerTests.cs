@@ -8,11 +8,11 @@ public class BackgroundSamplerTests
     private static void Fill(PagePixels p, RectD r, byte value)
     {
         for (var y = (int)r.Top; y < Math.Min((int)r.Bottom, p.Height); y++)
-        for (var x = (int)r.Left; x < Math.Min((int)r.Right, p.Width); x++)
-        {
-            var i = y * p.Stride + x * 4;
-            p.Bgra[i] = p.Bgra[i + 1] = p.Bgra[i + 2] = value;
-        }
+            for (var x = (int)r.Left; x < Math.Min((int)r.Right, p.Width); x++)
+            {
+                var i = y * p.Stride + x * 4;
+                p.Bgra[i] = p.Bgra[i + 1] = p.Bgra[i + 2] = value;
+            }
     }
 
     [Fact]
@@ -35,8 +35,8 @@ public class BackgroundSamplerTests
         var page = PagePixels.Blank(400, 300);
         // 체크무늬 그림
         for (var y = 0; y < 300; y += 8)
-        for (var x = 0; x < 400; x += 8)
-            if (((x + y) / 8) % 2 == 0) Fill(page, new RectD(x, y, 8, 8), 60);
+            for (var x = 0; x < 400; x += 8)
+                if (((x + y) / 8) % 2 == 0) Fill(page, new RectD(x, y, 8, 8), 60);
         var text = new RectD(100, 100, 150, 40);
         var (bg, _) = BackgroundSampler.Sample(page, text, 36, null);
         Assert.False(bg.IsUniform);

@@ -604,9 +604,11 @@ public sealed class ViewerControl : FrameworkElement
         dc.DrawRectangle(_errorFill, null, rect);
         var name = _session?.Book is { } b && index < b.Pages.Count ? b.Pages[index].FileName : string.Empty;
         var title = new FormattedText(Loc.T("Couldn't read this page."), CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-            new Typeface("Segoe UI"), 14, _textPrimary, dpi) { MaxTextWidth = Math.Max(10, rect.Width - 24), TextAlignment = TextAlignment.Center };
+            new Typeface("Segoe UI"), 14, _textPrimary, dpi)
+        { MaxTextWidth = Math.Max(10, rect.Width - 24), TextAlignment = TextAlignment.Center };
         var sub = new FormattedText($"{Loc.T("Page %lld", index + 1)} · {name}", CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-            new Typeface("Segoe UI"), 12, _textSecondary, dpi) { MaxTextWidth = Math.Max(10, rect.Width - 24), TextAlignment = TextAlignment.Center, Trimming = TextTrimming.CharacterEllipsis };
+            new Typeface("Segoe UI"), 12, _textSecondary, dpi)
+        { MaxTextWidth = Math.Max(10, rect.Width - 24), TextAlignment = TextAlignment.Center, Trimming = TextTrimming.CharacterEllipsis };
         var total = title.Height + 6 + sub.Height;
         var y = rect.Y + (rect.Height - total) / 2;
         dc.DrawText(title, new Point(rect.X + 12, y));

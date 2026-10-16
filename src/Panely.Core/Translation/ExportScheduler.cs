@@ -37,6 +37,7 @@ public sealed record ExportJobInfo
 /// 번역본 내보내기(06 번역본 내보내기). 책 하나당 job: preparing → translating(공유 큐) → waiting → exporting → finished/failed/cancelled.
 /// 렌더링/쓰기는 한 책씩. `.partial` staging 후 원자적 rename, rename 시점에도 충돌을 확인해 덮어쓰지 않는다.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1001:Types that own disposable fields should be disposable", Justification = "SemaphoreSlim은 WaitAsync만 사용해 대기 핸들을 만들지 않는다. 종료 중 남은 작업의 Release와 경합하지 않도록 해제하지 않는다.")]
 public sealed class ExportScheduler
 {
     private readonly TranslationScheduler _translation;

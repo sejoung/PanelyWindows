@@ -1,0 +1,15 @@
+# 텍스트는 저장소에 LF로 저장하고 체크아웃 시 플랫폼 기본으로 변환한다.
+* text=auto
+
+# Windows 셸 스크립트는 CRLF가 필요하다.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# 바이너리
+*.png binary
+*.ico binary
+*.rar binary
+*.zip binary
+*.cbz binary
+*.onnx binary

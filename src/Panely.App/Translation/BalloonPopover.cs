@@ -55,8 +55,13 @@ internal sealed class BalloonPopover : Border
     {
         var t = new TextBox
         {
-            Text = text, IsReadOnly = true, TextWrapping = TextWrapping.Wrap, BorderThickness = new Thickness(0),
-            Background = System.Windows.Media.Brushes.Transparent, Padding = new Thickness(0), FontSize = 14,
+            Text = text,
+            IsReadOnly = true,
+            TextWrapping = TextWrapping.Wrap,
+            BorderThickness = new Thickness(0),
+            Background = System.Windows.Media.Brushes.Transparent,
+            Padding = new Thickness(0),
+            FontSize = 14,
         };
         t.SetResourceReference(Control.ForegroundProperty, "Brush.TextPrimary");
         return t;

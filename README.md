@@ -20,6 +20,7 @@
 
 | 스크립트 | 하는 일 |
 |---|---|
+| `verify.cmd` | **린트·빌드·테스트·smoke·게시본 확인을 한 번에** 실행하고 단계별 요약 출력 (`-Quick`, `-Fix`, `-MinCoverage 80`) |
 | `build.cmd` | 솔루션 빌드 + 전체 테스트 (`-Configuration Release`, `-SkipTests`, `-Filter Translation`, `-Clean`) |
 | `install-local.cmd` | 빌드·테스트 → self-contained 게시 → `%LOCALAPPDATA%\Programs\Panely`에 설치 → 시작 메뉴 "Panely (Local)" → 실행 |
 | `uninstall-local.cmd` | 로컬 설치 제거. 사용자 데이터는 남김 (`-RemoveDevData`, `-RemoveData`) |
@@ -37,6 +38,31 @@ install-local.cmd -NoLaunch -DesktopShortcut
 - 관리자 권한이 필요 없고, 설치본은 .NET 런타임이 없어도 실행됩니다.
 - 실행 중인 설치본은 위치를 저장하도록 먼저 정상 종료한 뒤 교체합니다.
 - 버전은 `1.0.0-dev.<날짜.시각>+<커밋>` 형식이라 설정 › 진단이나 정보 창에서 어떤 빌드인지 확인할 수 있습니다. 설치 폴더의 `install-info.json`에도 남습니다.
+
+### 한 번에 검증하기 (`verify.cmd`)
+
+커밋하거나 배포하기 전에 실행합니다. 실패한 단계가 있어도 나머지를 끝까지 돌린 뒤 요약하고, 하나라도 실패하면 종료 코드 1을 냅니다.
+
+| 단계 | 내용 |
+|---|---|
+| format | `dotnet format --verify-no-changes --severity warn`: `.editorconfig`의 공백·코드 스타일·분석기 규칙 |
+| build | Release 빌드, .NET 분석기(`latest-recommended`) 경고를 오류로 처리(`-warnaserror`) |
+| test | 단위·계약 테스트(smoke 제외) + 커버리지 요약 |
+| scripts & data | PowerShell 구문, 한글 스크립트의 UTF-8 BOM, `.cmd` CRLF, JSON 문법, (설치 시) PSScriptAnalyzer |
+| smoke | 실제 `Panely.exe`를 격리된 데이터 폴더로 띄워 열기·종료·상태 저장·손상 파일·single-instance 전달 확인 |
+| publish smoke | self-contained 게시본으로 smoke 재실행(.NET 미설치 PC 조건) |
+
+```powershell
+verify.cmd            # 전체(약 40초)
+verify.cmd -Quick     # smoke·게시 생략(약 15초)
+verify.cmd -Fix       # 형식 자동 수정 후 검증
+```
+
+린트 규칙은 `.editorconfig`에 있습니다. 문화권에 따라 달라지는 서식·비교(CA1305/CA1310)와 해제되지 않는 리소스(CA1001)는 빌드를 막고, 성능 힌트는 제안으로만 표시합니다.
+
+테스트 구성은 이렇습니다.
+- `tests/Panely.Tests`: 계산·파일·저장·번역 로직, 명세 test-vectors, 계약 검사(코드가 쓰는 문구 key가 한영 문구표에 있는지와 치환자 일치, macOS 표현 금지, `domain.schema.json` 검증, 명세 패키지 해시).
+- `tests/Panely.App.Tests`: 테마 토큰, 단축키 해석·중복, 이미지 디코딩(EXIF 회전), 번역 패치 렌더링 픽셀 검사, 실제 앱 smoke(`Category=Smoke`).
 
 dotnet CLI로 직접 할 수도 있습니다.
 

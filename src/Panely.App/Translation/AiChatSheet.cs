@@ -46,7 +46,7 @@ internal sealed class AiChatSheet : SheetWindow
 
         body.Children.Add(Gap(Ui.Section(Loc.T("Pages")), 14));
         _from = Ui.TextBox("1");
-        _to = Ui.TextBox(book.Pages.Count.ToString());
+        _to = Ui.TextBox(book.Pages.Count.ToString(System.Globalization.CultureInfo.InvariantCulture));
         _from.Width = _to.Width = 64;
         _from.IsEnabled = _to.IsEnabled = false;
         body.Children.Add(Gap(Ui.Radio(Loc.T("Whole Book"), "ai-scope", true, () => { _wholeBook = true; _from.IsEnabled = _to.IsEnabled = false; _snapshot = null; }), 4));

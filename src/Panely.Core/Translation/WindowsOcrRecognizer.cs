@@ -11,6 +11,7 @@ namespace Panely.Core.Translation;
 /// Windows.Media.Ocr 기반 OCR(Vision 대체). Windows 설정에서 해당 언어의 OCR 기능이 설치되어 있어야 한다.
 /// 알려진 한계(미검증): 세로쓰기 일본어/중국어 인식 품질은 보장되지 않는다. Windows OCR은 가로 줄 중심이다.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1001:Types that own disposable fields should be disposable", Justification = "SemaphoreSlim은 WaitAsync만 사용해 대기 핸들을 만들지 않는다. 앱 수명 동안 하나만 존재한다.")]
 public sealed class WindowsOcrRecognizer : ITextRecognizer
 {
     private readonly SemaphoreSlim _gate = new(1, 1);

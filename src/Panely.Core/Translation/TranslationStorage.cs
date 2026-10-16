@@ -63,13 +63,27 @@ public static class TranslationJson
         if (dto.ImageWidth <= 0 || dto.ImageHeight <= 0 || dto.Bubbles is null) throw new InvalidDataException("size");
         return new TranslatedPage
         {
-            PageId = dto.PageId, SourceLanguage = dto.Source, TargetLanguage = dto.Target, Scope = ParseScope(dto.Scope), Mode = ParseMode(dto.Mode),
-            ProviderRevision = dto.ProviderRevision, AnalysisVersion = dto.AnalysisVersion, ImageWidth = dto.ImageWidth, ImageHeight = dto.ImageHeight,
-            IsComplete = dto.IsComplete, SpeechLevelChecked = dto.SpeechLevelChecked,
+            PageId = dto.PageId,
+            SourceLanguage = dto.Source,
+            TargetLanguage = dto.Target,
+            Scope = ParseScope(dto.Scope),
+            Mode = ParseMode(dto.Mode),
+            ProviderRevision = dto.ProviderRevision,
+            AnalysisVersion = dto.AnalysisVersion,
+            ImageWidth = dto.ImageWidth,
+            ImageHeight = dto.ImageHeight,
+            IsComplete = dto.IsComplete,
+            SpeechLevelChecked = dto.SpeechLevelChecked,
             Bubbles = dto.Bubbles.Select(b => new TranslatedBubble
             {
-                Id = b.Id, Rect = b.Rect.To(), GlyphSize = b.GlyphSize, IsVertical = b.IsVertical, Source = b.Source, Translation = b.Translation,
-                Background = b.Background.To(), BalloonRect = b.BalloonRect?.To(),
+                Id = b.Id,
+                Rect = b.Rect.To(),
+                GlyphSize = b.GlyphSize,
+                IsVertical = b.IsVertical,
+                Source = b.Source,
+                Translation = b.Translation,
+                Background = b.Background.To(),
+                BalloonRect = b.BalloonRect?.To(),
             }).ToList(),
         };
     }
@@ -87,11 +101,16 @@ public static class TranslationJson
         if (dto.SchemaVersion != PageEdits.SchemaVersion) throw new InvalidDataException("unsupported schema");
         return new PageEdits
         {
-            PageId = dto.PageId, Scope = ParseScope(dto.Scope),
+            PageId = dto.PageId,
+            Scope = ParseScope(dto.Scope),
             Bubbles = (dto.Bubbles ?? []).Select(e => new BubbleEdit
             {
-                RecognizedSource = e.RecognizedSource, Rect = e.Rect.To(), IsHidden = e.IsHidden, CorrectedSource = e.CorrectedSource,
-                Retranslations = e.Retranslations ?? new Dictionary<string, string>(), Translations = e.Translations ?? new Dictionary<string, string>(),
+                RecognizedSource = e.RecognizedSource,
+                Rect = e.Rect.To(),
+                IsHidden = e.IsHidden,
+                CorrectedSource = e.CorrectedSource,
+                Retranslations = e.Retranslations ?? new Dictionary<string, string>(),
+                Translations = e.Translations ?? new Dictionary<string, string>(),
                 Added = e.Added is { } a ? new AddedBalloon(a.GlyphSize, a.IsVertical, a.Background.To()) : null,
             }).ToList(),
         };

@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Panely.Tests" />
+    <InternalsVisibleTo Include="Panely.App.Tests" />
   </ItemGroup>
 
   <!-- Reader-only build switch: dotnet build -p:PanelyNoTranslation=true (translation module excluded; the app falls back to NullTranslationFeature). -->

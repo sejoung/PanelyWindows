@@ -7,9 +7,9 @@ public static class ExportNaming
     /// <summary>번호 폭 = max(3, digits(pageCount)), 1부터.</summary>
     public static string PageFileName(int pageCount, int index, string extension)
     {
-        var width = Math.Max(3, Math.Max(1, pageCount).ToString().Length);
+        var width = Math.Max(3, Math.Max(1, pageCount).ToString(System.Globalization.CultureInfo.InvariantCulture).Length);
         var ext = extension.TrimStart('.').ToLowerInvariant();
-        return (index + 1).ToString().PadLeft(width, '0') + "." + ext;
+        return (index + 1).ToString(System.Globalization.CultureInfo.InvariantCulture).PadLeft(width, '0') + "." + ext;
     }
 
     private static readonly HashSet<string> Reserved = new(StringComparer.OrdinalIgnoreCase)

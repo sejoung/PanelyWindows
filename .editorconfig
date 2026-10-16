@@ -1,0 +1,98 @@
+# Panely 코드 스타일·분석기 설정. `dotnet format`과 빌드 분석기(AnalysisLevel=latest-recommended)가 함께 읽는다.
+# 검증: tools\verify.ps1 (형식 검사 + 경고를 오류로 하는 빌드)
+
+root = true
+
+[*]
+charset = utf-8
+indent_style = space
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{cs,csx}]
+indent_size = 4
+
+[*.{xaml,csproj,props,targets,xml,json,yml,yaml}]
+indent_size = 2
+
+[*.{ps1,psm1}]
+indent_size = 4
+# Windows PowerShell 5.1은 BOM 없는 UTF-8을 ANSI로 읽는다
+charset = utf-8-bom
+
+[*.cmd]
+indent_size = 4
+end_of_line = crlf
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.cs]
+# ── 줄바꿈·공백(기존 코드 스타일: Allman 중괄호, 한 줄 문장/블록 허용) ──
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+csharp_new_line_before_members_in_object_initializers = true
+csharp_new_line_before_members_in_anonymous_types = true
+csharp_new_line_between_query_expression_clauses = true
+csharp_preserve_single_line_statements = true
+csharp_preserve_single_line_blocks = true
+csharp_indent_case_contents = true
+csharp_indent_switch_labels = true
+csharp_space_after_cast = false
+csharp_space_after_keywords_in_control_flow_statements = true
+csharp_space_around_binary_operators = before_and_after
+
+# ── 언어 스타일(제안 수준: IDE에서 표시, 빌드는 막지 않음) ──
+csharp_style_namespace_declarations = file_scoped:suggestion
+csharp_style_var_for_built_in_types = true:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = true:suggestion
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+csharp_style_expression_bodied_properties = true:suggestion
+csharp_prefer_braces = when_multiline:suggestion
+csharp_using_directive_placement = outside_namespace:suggestion
+dotnet_sort_system_directives_first = true
+dotnet_style_qualification_for_field = false:suggestion
+dotnet_style_qualification_for_property = false:suggestion
+dotnet_style_qualification_for_method = false:suggestion
+dotnet_style_qualification_for_event = false:suggestion
+dotnet_style_predefined_type_for_locals_parameters_members = true:suggestion
+dotnet_style_readonly_field = true:suggestion
+
+# private 필드는 _camelCase
+dotnet_naming_rule.private_fields_underscore.severity = suggestion
+dotnet_naming_rule.private_fields_underscore.symbols = private_fields
+dotnet_naming_rule.private_fields_underscore.style = underscore_camel
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+dotnet_naming_style.underscore_camel.required_prefix = _
+dotnet_naming_style.underscore_camel.capitalization = camel_case
+
+# ── 분석기 심각도 ──
+# 빌드 게이트(경고 → verify에서 오류): 문화권 의존 서식/비교, 해제되지 않는 리소스
+dotnet_diagnostic.CA1305.severity = warning   # IFormatProvider 지정 (UI가 한/영 전환됨)
+dotnet_diagnostic.CA1310.severity = warning   # StringComparison 지정
+dotnet_diagnostic.CA1307.severity = suggestion
+dotnet_diagnostic.CA1001.severity = warning   # IDisposable 필드를 가진 형식은 IDisposable
+
+# 제안 수준(성능/스타일 힌트)
+dotnet_diagnostic.CA1822.severity = suggestion # static 가능
+dotnet_diagnostic.CA1859.severity = suggestion # 구체 형식 반환
+dotnet_diagnostic.CA1861.severity = suggestion # 상수 배열 인수
+dotnet_diagnostic.CA1826.severity = suggestion
+dotnet_diagnostic.CA1725.severity = suggestion # 재정의 매개변수 이름(dc 등 관용 이름 허용)
+
+# 끔
+dotnet_diagnostic.CA1720.severity = none       # 명세의 열거형 이름 Single/Double 유지
+dotnet_diagnostic.CA2007.severity = none       # 앱 코드: ConfigureAwait 강제하지 않음
+
+[tests/**.cs]
+dotnet_diagnostic.CA1707.severity = none       # 테스트 메서드 이름의 밑줄 허용
+dotnet_diagnostic.CA1305.severity = suggestion
+dotnet_diagnostic.CA1001.severity = suggestion
+dotnet_diagnostic.CA2000.severity = none
+
+[tools/**.cs]
+dotnet_diagnostic.CA1305.severity = suggestion

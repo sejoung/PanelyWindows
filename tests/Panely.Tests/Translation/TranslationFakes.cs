@@ -32,8 +32,15 @@ internal static class FakeBooks
         return new OpenedBook
         {
             Source = new SourceRef { Id = SourceId, Path = @"C:\Comics\Sample.cbz", Kind = SourceKind.Archive, Title = title },
-            Book = bookRef, SeriesKey = "series:test", Title = title, Pages = entries, Data = new MemoryPageSource(data),
-            WatchPath = @"C:\Comics\Sample.cbz", DisplayPath = "Sample.cbz", LibraryPath = @"C:\Comics\Sample.cbz", IsNestedCacheBook = nested,
+            Book = bookRef,
+            SeriesKey = "series:test",
+            Title = title,
+            Pages = entries,
+            Data = new MemoryPageSource(data),
+            WatchPath = @"C:\Comics\Sample.cbz",
+            DisplayPath = "Sample.cbz",
+            LibraryPath = @"C:\Comics\Sample.cbz",
+            IsNestedCacheBook = nested,
         };
     }
 }

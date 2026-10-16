@@ -55,8 +55,14 @@ public sealed class PageAnalyzer
             var (background, balloonSafe) = BackgroundSampler.Sample(image, g.Rect, g.GlyphSize, g.BalloonRect);
             bubbles.Add(new TranslatedBubble
             {
-                Id = g.Id, Rect = g.Rect, GlyphSize = g.GlyphSize, IsVertical = g.IsVertical, Source = g.Text,
-                Translation = null, Background = background, BalloonRect = balloonSafe ? g.BalloonRect : null,
+                Id = g.Id,
+                Rect = g.Rect,
+                GlyphSize = g.GlyphSize,
+                IsVertical = g.IsVertical,
+                Source = g.Text,
+                Translation = null,
+                Background = background,
+                BalloonRect = balloonSafe ? g.BalloonRect : null,
             });
         }
         return bubbles;

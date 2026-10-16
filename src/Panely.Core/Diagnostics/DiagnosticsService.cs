@@ -155,7 +155,7 @@ public sealed class DiagnosticsService : IDiagnostics, IDisposable
         var report = BuildReport(snapshot, errors);
         var loads = new StringBuilder();
         foreach (var e in events)
-            loads.Append(e.Time.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")).Append(' ').Append(FormatLoad(e)).Append('\n');
+            loads.Append(e.Time.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", System.Globalization.CultureInfo.InvariantCulture)).Append(' ').Append(FormatLoad(e)).Append('\n');
 
         var dir = Path.GetDirectoryName(Path.GetFullPath(zipPath))!;
         Directory.CreateDirectory(dir);
@@ -191,13 +191,13 @@ public sealed class DiagnosticsService : IDiagnostics, IDisposable
     {
         var sb = new StringBuilder();
         sb.Append("# Panely Diagnostic Report\n\n");
-        sb.Append("Generated: ").Append(DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")).Append("\n\n");
+        sb.Append("Generated: ").Append(DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture)).Append("\n\n");
         sb.Append("## App\n\n");
         sb.Append("- Version: ").Append(s.AppVersion).Append('\n');
         sb.Append("- Build: ").Append(s.Build).Append('\n');
         sb.Append("- OS: ").Append(s.OsVersion).Append('\n');
         sb.Append("- Session: ").Append(SessionId.ToString("D")).Append('\n');
-        sb.Append("- Launched (UTC): ").Append(LaunchedAt.ToString("yyyy-MM-ddTHH:mm:ssZ")).Append("\n\n");
+        sb.Append("- Launched (UTC): ").Append(LaunchedAt.ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture)).Append("\n\n");
         sb.Append("## Extraction cache\n\n");
         sb.Append("- Total: ").Append(s.Cache.TotalBytes).Append(" bytes\n");
         sb.Append("- Clearable: ").Append(s.Cache.ClearableBytes).Append(" bytes\n");
