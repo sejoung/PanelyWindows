@@ -12,14 +12,11 @@ param(
     [string]$Output = ''
 )
 
-$ErrorActionPreference = 'Stop'
-$repo = Split-Path -Parent $PSScriptRoot
+. "$PSScriptRoot\_common.ps1"
+$repo = $RepoRoot
 if (-not $Output) { $Output = Join-Path $repo "artifacts\Panely-$Runtime" }
 
-$dotnet = Join-Path $env:LOCALAPPDATA 'Microsoft\dotnet\dotnet.exe'
-if (-not (Test-Path $dotnet)) { $dotnet = 'dotnet' }
-$env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
-$env:DOTNET_NOLOGO = '1'
+$dotnet = Get-Dotnet
 
 & $dotnet publish (Join-Path $repo 'src\Panely.App\Panely.App.csproj') `
     -c $Configuration -r $Runtime --self-contained true `

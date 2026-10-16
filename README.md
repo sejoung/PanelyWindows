@@ -16,11 +16,34 @@
 ## 빌드·실행
 
 필요한 것: Windows 10 19041 이상(1차 대상 Windows 11 x64), [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
+스크립트는 PATH의 `dotnet`이나 `%LOCALAPPDATA%\Microsoft\dotnet`에서 SDK를 찾습니다. 저장소 루트의 `.cmd`는 더블클릭이나 cmd에서 실행할 수 있고, 인자는 같은 이름의 `tools\*.ps1`로 그대로 넘어갑니다.
+
+| 스크립트 | 하는 일 |
+|---|---|
+| `build.cmd` | 솔루션 빌드 + 전체 테스트 (`-Configuration Release`, `-SkipTests`, `-Filter Translation`, `-Clean`) |
+| `install-local.cmd` | 빌드·테스트 → self-contained 게시 → `%LOCALAPPDATA%\Programs\Panely`에 설치 → 시작 메뉴 "Panely (Local)" → 실행 |
+| `uninstall-local.cmd` | 로컬 설치 제거. 사용자 데이터는 남김 (`-RemoveDevData`, `-RemoveData`) |
+
+로컬에서 바로 테스트할 때는 이렇게 씁니다.
+
+```powershell
+install-local.cmd                          # 테스트 후 설치하고 실행
+install-local.cmd -SkipTests               # 빠르게(설치만 몇 초)
+install-local.cmd -Samples -Isolated       # QA 샘플 라이브러리를 열고, 실제 데이터 대신 %LOCALAPPDATA%\Panely-dev 사용
+install-local.cmd -Open "D:\Comics\Series A"
+install-local.cmd -NoLaunch -DesktopShortcut
+```
+
+- 관리자 권한이 필요 없고, 설치본은 .NET 런타임이 없어도 실행됩니다.
+- 실행 중인 설치본은 위치를 저장하도록 먼저 정상 종료한 뒤 교체합니다.
+- 버전은 `1.0.0-dev.<날짜.시각>+<커밋>` 형식이라 설정 › 진단이나 정보 창에서 어떤 빌드인지 확인할 수 있습니다. 설치 폴더의 `install-info.json`에도 남습니다.
+
+dotnet CLI로 직접 할 수도 있습니다.
 
 ```powershell
 dotnet build Panely.sln
-dotnet run --project src/Panely.App -- "D:\Comics\Series A"     # 폴더나 아카이브 경로는 생략 가능
 dotnet test tests/Panely.Tests
+dotnet run --project src/Panely.App -- "D:\Comics\Series A"
 ```
 
 배포본(.NET 런타임이 없는 PC에서도 실행, 관리자 권한 불필요):
