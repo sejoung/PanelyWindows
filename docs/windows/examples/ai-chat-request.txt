@@ -1,0 +1,4 @@
+# Panely — "Sample" — Japanese → Korean — 2 balloons, pages 1–2
+# Each line: [id] original → current translation
+[p1-1] こんにちは → 안녕하세요
+[p2-1] ありがとう / またね → 고마워 / 또 봐

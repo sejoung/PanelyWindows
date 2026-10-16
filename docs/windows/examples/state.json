@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "settings": {
+    "layout": "single",
+    "direction": "leftToRight",
+    "fitMode": "fitScreen",
+    "sidebarPinned": true,
+    "toolbarPinned": false,
+    "thumbnailSidebarVisible": false,
+    "autoFitOnResize": true,
+    "doublePageCoverAlone": false,
+    "wheelPageTurn": true,
+    "reopenLastFolderOnLaunch": true,
+    "appLanguage": "system",
+    "translationEnabled": false,
+    "translationMatchesSpeechLevel": true,
+    "translationMode": "fast",
+    "translationTargetLanguage": null,
+    "translationOverlayVisible": true,
+    "translationBalloonTipDismissed": false,
+    "logLevel": "info",
+    "libraryAutoRefreshEnabled": true
+  },
+  "sources": [
+    {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "path": "C:\\Comics\\Sample Series.zip",
+      "kind": "archive",
+      "title": "Sample Series"
+    }
+  ],
+  "positions": {
+    "source:11111111-1111-4111-8111-111111111111#Volume 01": {
+      "pageIndex": 2,
+      "updatedAt": "2026-10-16T00:00:00Z"
+    }
+  },
+  "progress": {
+    "source:11111111-1111-4111-8111-111111111111#Volume 01": {
+      "page": 2,
+      "total": 24,
+      "finished": false,
+      "updatedAt": "2026-10-16T00:00:00Z"
+    }
+  },
+  "recents": [
+    {
+      "id": "22222222-2222-4222-8222-222222222222",
+      "sourceId": "11111111-1111-4111-8111-111111111111",
+      "title": "Sample Series",
+      "openedAt": "2026-10-16T00:00:00Z"
+    }
+  ],
+  "favorites": [],
+  "bookmarks": {
+    "source:11111111-1111-4111-8111-111111111111#Volume 01": {
+      "bookRef": {
+        "sourceId": "11111111-1111-4111-8111-111111111111",
+        "innerPath": "Volume 01"
+      },
+      "title": "Volume 01",
+      "bookmarks": [
+        {
+          "id": "33333333-3333-4333-8333-333333333333",
+          "pageIndex": 2,
+          "createdAt": "2026-10-16T00:00:00Z"
+        }
+      ]
+    }
+  },
+  "seriesPreferences": {
+    "series:11111111-1111-4111-8111-111111111111": {
+      "direction": "rightToLeft",
+      "translationSource": "ja",
+      "translationTarget": "ko",
+      "updatedAt": "2026-10-16T00:00:00Z"
+    }
+  },
+  "exportHistory": [],
+  "exportOptions": {
+    "target": "ko",
+    "format": "cbz",
+    "untranslated": "translateFirst"
+  },
+  "exportDestination": null,
+  "lastLibraryRoot": null
+}

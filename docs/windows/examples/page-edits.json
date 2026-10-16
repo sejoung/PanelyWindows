@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "pageId": "source:11111111-1111-4111-8111-111111111111#Volume 01|001.png|example-signature",
+  "scope": "page",
+  "bubbles": [
+    {
+      "recognizedSource": "こんにちは",
+      "rect": {
+        "x": 100,
+        "y": 120,
+        "width": 140,
+        "height": 260
+      },
+      "isHidden": false,
+      "correctedSource": null,
+      "retranslations": {},
+      "translations": {
+        "ko": "안녕"
+      },
+      "added": null
+    }
+  ]
+}

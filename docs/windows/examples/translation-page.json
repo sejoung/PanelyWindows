@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "pageId": "source:11111111-1111-4111-8111-111111111111#Volume 01|001.png|example-signature",
+  "source": "ja",
+  "target": "ko",
+  "scope": "page",
+  "mode": "fast",
+  "providerRevision": "example-only-not-a-model",
+  "analysisVersion": 1,
+  "imageWidth": 720,
+  "imageHeight": 1200,
+  "isComplete": true,
+  "speechLevelChecked": false,
+  "bubbles": [
+    {
+      "id": 0,
+      "rect": {
+        "x": 100,
+        "y": 120,
+        "width": 140,
+        "height": 260
+      },
+      "glyphSize": 24,
+      "isVertical": true,
+      "source": "こんにちは",
+      "translation": "안녕하세요",
+      "background": {
+        "red": 1,
+        "green": 1,
+        "blue": 1,
+        "isUniform": true
+      },
+      "balloonRect": {
+        "x": 70,
+        "y": 90,
+        "width": 220,
+        "height": 320
+      }
+    }
+  ]
+}

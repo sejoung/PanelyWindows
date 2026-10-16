@@ -1,0 +1,919 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:panely:windows:domain:1",
+  "title": "Panely Windows independent data contracts",
+  "description": "Root validates state. PageEdits and TranslatedPage are separate files validated with the corresponding $defs references. UUID/path references, safe relative paths, unique bookmarks and semantic ranges require application checks.",
+  "$ref": "#/$defs/State",
+  "$defs": {
+    "Language": {
+      "enum": [
+        "ja",
+        "zh-Hans",
+        "zh-Hant",
+        "ko",
+        "en"
+      ]
+    },
+    "Layout": {
+      "enum": [
+        "single",
+        "double",
+        "vertical"
+      ]
+    },
+    "Direction": {
+      "enum": [
+        "leftToRight",
+        "rightToLeft"
+      ]
+    },
+    "FitMode": {
+      "enum": [
+        "fitScreen",
+        "fitWidth",
+        "fitHeight"
+      ]
+    },
+    "Rect": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "height": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "additionalProperties": false
+    },
+    "Background": {
+      "type": "object",
+      "properties": {
+        "red": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "green": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "blue": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "isUniform": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "red",
+        "green",
+        "blue",
+        "isUniform"
+      ],
+      "additionalProperties": false
+    },
+    "SourceRef": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "folder",
+            "archive"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "volumeId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fileId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "path",
+        "kind",
+        "title"
+      ],
+      "additionalProperties": false
+    },
+    "BookRef": {
+      "type": "object",
+      "properties": {
+        "sourceId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "innerPath": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "sourceId"
+      ],
+      "additionalProperties": false
+    },
+    "Settings": {
+      "type": "object",
+      "properties": {
+        "layout": {
+          "$ref": "#/$defs/Layout"
+        },
+        "direction": {
+          "$ref": "#/$defs/Direction"
+        },
+        "fitMode": {
+          "$ref": "#/$defs/FitMode"
+        },
+        "appLanguage": {
+          "enum": [
+            "system",
+            "en",
+            "ko"
+          ]
+        },
+        "translationMode": {
+          "enum": [
+            "fast",
+            "accurate"
+          ]
+        },
+        "translationTargetLanguage": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Language"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "logLevel": {
+          "enum": [
+            "trace",
+            "debug",
+            "info",
+            "notice",
+            "warning",
+            "error",
+            "critical"
+          ]
+        },
+        "sidebarPinned": {
+          "type": "boolean"
+        },
+        "toolbarPinned": {
+          "type": "boolean"
+        },
+        "thumbnailSidebarVisible": {
+          "type": "boolean"
+        },
+        "autoFitOnResize": {
+          "type": "boolean"
+        },
+        "doublePageCoverAlone": {
+          "type": "boolean"
+        },
+        "wheelPageTurn": {
+          "type": "boolean"
+        },
+        "reopenLastFolderOnLaunch": {
+          "type": "boolean"
+        },
+        "translationEnabled": {
+          "type": "boolean"
+        },
+        "translationMatchesSpeechLevel": {
+          "type": "boolean"
+        },
+        "translationOverlayVisible": {
+          "type": "boolean"
+        },
+        "translationBalloonTipDismissed": {
+          "type": "boolean"
+        },
+        "libraryAutoRefreshEnabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "layout",
+        "direction",
+        "fitMode",
+        "appLanguage",
+        "translationMode",
+        "translationTargetLanguage",
+        "logLevel",
+        "sidebarPinned",
+        "toolbarPinned",
+        "thumbnailSidebarVisible",
+        "autoFitOnResize",
+        "doublePageCoverAlone",
+        "wheelPageTurn",
+        "reopenLastFolderOnLaunch",
+        "translationEnabled",
+        "translationMatchesSpeechLevel",
+        "translationOverlayVisible",
+        "translationBalloonTipDismissed",
+        "libraryAutoRefreshEnabled"
+      ],
+      "additionalProperties": false
+    },
+    "Position": {
+      "type": "object",
+      "properties": {
+        "pageIndex": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "pageIndex",
+        "updatedAt"
+      ],
+      "additionalProperties": false
+    },
+    "Progress": {
+      "type": "object",
+      "properties": {
+        "page": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "finished": {
+          "type": "boolean"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "page",
+        "total",
+        "finished",
+        "updatedAt"
+      ],
+      "additionalProperties": false
+    },
+    "Recent": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "sourceId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "title": {
+          "type": "string"
+        },
+        "openedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "sourceId",
+        "title",
+        "openedAt"
+      ],
+      "additionalProperties": false
+    },
+    "Favorite": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "bookRef": {
+          "$ref": "#/$defs/BookRef"
+        },
+        "title": {
+          "type": "string"
+        },
+        "addedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "bookRef",
+        "title",
+        "addedAt"
+      ],
+      "additionalProperties": false
+    },
+    "Bookmark": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "pageIndex": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "pageIndex",
+        "createdAt"
+      ],
+      "additionalProperties": false
+    },
+    "BookBookmarks": {
+      "type": "object",
+      "properties": {
+        "bookRef": {
+          "$ref": "#/$defs/BookRef"
+        },
+        "title": {
+          "type": "string"
+        },
+        "bookmarks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Bookmark"
+          },
+          "maxItems": 500
+        }
+      },
+      "required": [
+        "bookRef",
+        "title",
+        "bookmarks"
+      ],
+      "additionalProperties": false
+    },
+    "SeriesPreferences": {
+      "type": "object",
+      "properties": {
+        "direction": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Direction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "layout": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Layout"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fitMode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FitMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "translationSource": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Language"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "translationTarget": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Language"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "autoTranslate": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "updatedAt"
+      ],
+      "additionalProperties": false
+    },
+    "ExportOptions": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/Language"
+        },
+        "format": {
+          "enum": [
+            "cbz",
+            "zip",
+            "folder"
+          ]
+        },
+        "untranslated": {
+          "enum": [
+            "translateFirst",
+            "exportAsIs"
+          ]
+        }
+      },
+      "required": [
+        "target",
+        "format",
+        "untranslated"
+      ],
+      "additionalProperties": false
+    },
+    "ExportRecord": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "title": {
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/Language"
+        },
+        "format": {
+          "enum": [
+            "cbz",
+            "zip",
+            "folder"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pageCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "date": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "target",
+        "format",
+        "path",
+        "pageCount",
+        "bytes",
+        "date"
+      ],
+      "additionalProperties": false
+    },
+    "AddedBalloon": {
+      "type": "object",
+      "properties": {
+        "glyphSize": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "isVertical": {
+          "type": "boolean"
+        },
+        "background": {
+          "$ref": "#/$defs/Background"
+        }
+      },
+      "required": [
+        "glyphSize",
+        "isVertical",
+        "background"
+      ],
+      "additionalProperties": false
+    },
+    "BubbleEdit": {
+      "type": "object",
+      "properties": {
+        "recognizedSource": {
+          "type": "string"
+        },
+        "rect": {
+          "$ref": "#/$defs/Rect"
+        },
+        "isHidden": {
+          "type": "boolean"
+        },
+        "correctedSource": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "retranslations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "translations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "added": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AddedBalloon"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "recognizedSource",
+        "rect",
+        "isHidden",
+        "retranslations",
+        "translations"
+      ],
+      "additionalProperties": false
+    },
+    "PageEdits": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "pageId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "enum": [
+            "page",
+            "strip"
+          ]
+        },
+        "bubbles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BubbleEdit"
+          }
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "pageId",
+        "scope",
+        "bubbles"
+      ],
+      "additionalProperties": false
+    },
+    "TranslatedBubble": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rect": {
+          "$ref": "#/$defs/Rect"
+        },
+        "glyphSize": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "isVertical": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string"
+        },
+        "translation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "background": {
+          "$ref": "#/$defs/Background"
+        },
+        "balloonRect": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Rect"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "rect",
+        "glyphSize",
+        "isVertical",
+        "source",
+        "translation",
+        "background"
+      ],
+      "additionalProperties": false
+    },
+    "TranslatedPage": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "pageId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "$ref": "#/$defs/Language"
+        },
+        "target": {
+          "$ref": "#/$defs/Language"
+        },
+        "scope": {
+          "enum": [
+            "page",
+            "strip"
+          ]
+        },
+        "mode": {
+          "enum": [
+            "fast",
+            "accurate"
+          ]
+        },
+        "providerRevision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "analysisVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "imageWidth": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "imageHeight": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "isComplete": {
+          "type": "boolean"
+        },
+        "speechLevelChecked": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bubbles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TranslatedBubble"
+          }
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "pageId",
+        "source",
+        "target",
+        "scope",
+        "mode",
+        "providerRevision",
+        "analysisVersion",
+        "imageWidth",
+        "imageHeight",
+        "isComplete",
+        "bubbles"
+      ],
+      "additionalProperties": false
+    },
+    "State": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "settings": {
+          "$ref": "#/$defs/Settings"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SourceRef"
+          }
+        },
+        "positions": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Position"
+          },
+          "maxProperties": 4000
+        },
+        "progress": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Progress"
+          },
+          "maxProperties": 4000
+        },
+        "recents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Recent"
+          },
+          "maxItems": 50
+        },
+        "favorites": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Favorite"
+          }
+        },
+        "bookmarks": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/BookBookmarks"
+          },
+          "maxProperties": 200
+        },
+        "seriesPreferences": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/SeriesPreferences"
+          },
+          "maxProperties": 2000
+        },
+        "exportHistory": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ExportRecord"
+          },
+          "maxItems": 50
+        },
+        "exportOptions": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExportOptions"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exportDestination": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastLibraryRoot": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "settings",
+        "sources",
+        "positions",
+        "progress",
+        "recents",
+        "favorites",
+        "bookmarks",
+        "seriesPreferences",
+        "exportHistory",
+        "exportOptions",
+        "exportDestination",
+        "lastLibraryRoot"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

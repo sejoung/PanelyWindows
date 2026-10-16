@@ -1,0 +1,747 @@
+{
+  "schemaVersion": 1,
+  "note": "Expected examples for a new implementation, not evidence that a Windows implementation has run. Ranges are half-open; coordinates are document/image pixels unless DIP specified.",
+  "spreads": [
+    {
+      "input": {
+        "index": 0,
+        "pageCount": 0,
+        "step": 2,
+        "coverAlone": false
+      },
+      "range": [
+        0,
+        0
+      ],
+      "nextStart": null,
+      "previousStart": null
+    },
+    {
+      "input": {
+        "index": 0,
+        "pageCount": 1,
+        "step": 2,
+        "coverAlone": true
+      },
+      "range": [
+        0,
+        1
+      ],
+      "nextStart": null,
+      "previousStart": null
+    },
+    {
+      "input": {
+        "index": 1,
+        "pageCount": 6,
+        "step": 2,
+        "coverAlone": false
+      },
+      "range": [
+        0,
+        2
+      ],
+      "nextStart": 2,
+      "previousStart": null
+    },
+    {
+      "input": {
+        "index": 2,
+        "pageCount": 6,
+        "step": 2,
+        "coverAlone": false
+      },
+      "range": [
+        2,
+        4
+      ],
+      "nextStart": 4,
+      "previousStart": 0
+    },
+    {
+      "input": {
+        "index": 5,
+        "pageCount": 6,
+        "step": 2,
+        "coverAlone": false
+      },
+      "range": [
+        4,
+        6
+      ],
+      "nextStart": null,
+      "previousStart": 2
+    },
+    {
+      "input": {
+        "index": 0,
+        "pageCount": 6,
+        "step": 2,
+        "coverAlone": true
+      },
+      "range": [
+        0,
+        1
+      ],
+      "nextStart": 1,
+      "previousStart": null
+    },
+    {
+      "input": {
+        "index": 2,
+        "pageCount": 6,
+        "step": 2,
+        "coverAlone": true
+      },
+      "range": [
+        1,
+        3
+      ],
+      "nextStart": 3,
+      "previousStart": 0
+    },
+    {
+      "input": {
+        "index": 4,
+        "pageCount": 6,
+        "step": 2,
+        "coverAlone": true
+      },
+      "range": [
+        3,
+        5
+      ],
+      "nextStart": 5,
+      "previousStart": 1
+    },
+    {
+      "input": {
+        "index": 5,
+        "pageCount": 6,
+        "step": 2,
+        "coverAlone": true
+      },
+      "range": [
+        5,
+        6
+      ],
+      "nextStart": null,
+      "previousStart": 3
+    },
+    {
+      "input": {
+        "index": 4,
+        "pageCount": 5,
+        "step": 2,
+        "coverAlone": false
+      },
+      "range": [
+        4,
+        5
+      ],
+      "nextStart": null,
+      "previousStart": 2
+    },
+    {
+      "input": {
+        "index": -9,
+        "pageCount": 5,
+        "step": 2,
+        "coverAlone": false
+      },
+      "range": [
+        0,
+        2
+      ],
+      "nextStart": 2,
+      "previousStart": null
+    },
+    {
+      "input": {
+        "index": 99,
+        "pageCount": 5,
+        "step": 2,
+        "coverAlone": true
+      },
+      "range": [
+        3,
+        5
+      ],
+      "nextStart": null,
+      "previousStart": 1
+    },
+    {
+      "input": {
+        "index": 3,
+        "pageCount": 5,
+        "step": 1,
+        "coverAlone": true
+      },
+      "range": [
+        3,
+        4
+      ],
+      "nextStart": 4,
+      "previousStart": 2
+    }
+  ],
+  "fits": [
+    {
+      "doc": [
+        1200,
+        1800
+      ],
+      "viewport": [
+        800,
+        600
+      ],
+      "fitScreen": 0.3333333333333333,
+      "fitWidth": 0.6666666666666666,
+      "fitHeight": 0.3333333333333333
+    },
+    {
+      "doc": [
+        2400,
+        1800
+      ],
+      "viewport": [
+        800,
+        600
+      ],
+      "fitScreen": 0.3333333333333333,
+      "fitWidth": 0.3333333333333333,
+      "fitHeight": 0.3333333333333333
+    },
+    {
+      "doc": [
+        0,
+        1800
+      ],
+      "viewport": [
+        800,
+        600
+      ],
+      "fitScreen": 1,
+      "fitWidth": 1,
+      "fitHeight": 1
+    }
+  ],
+  "jumps": [
+    {
+      "pageCount": 6,
+      "layout": "double",
+      "coverAlone": false,
+      "inputPageNumber": 4,
+      "expectedPageIndex": 2
+    },
+    {
+      "pageCount": 6,
+      "layout": "double",
+      "coverAlone": true,
+      "inputPageNumber": 2,
+      "expectedPageIndex": 1
+    },
+    {
+      "pageCount": 6,
+      "layout": "single",
+      "coverAlone": false,
+      "inputPageNumber": 999,
+      "expectedPageIndex": 5
+    },
+    {
+      "pageCount": 6,
+      "layout": "single",
+      "coverAlone": false,
+      "inputPageNumber": -10,
+      "expectedPageIndex": 0
+    }
+  ],
+  "horizontalFrames": [
+    {
+      "sizes": [
+        [
+          600,
+          900
+        ],
+        [
+          1200,
+          1800
+        ]
+      ],
+      "direction": "leftToRight",
+      "document": [
+        2400,
+        1800
+      ],
+      "frames": [
+        [
+          0,
+          0,
+          1200,
+          1800
+        ],
+        [
+          1200,
+          0,
+          1200,
+          1800
+        ]
+      ]
+    },
+    {
+      "sizes": [
+        [
+          600,
+          900
+        ],
+        [
+          800,
+          1200
+        ]
+      ],
+      "direction": "rightToLeft",
+      "displayLogicalIndices": [
+        1,
+        0
+      ],
+      "document": [
+        1600,
+        1200
+      ],
+      "framesInDisplayOrder": [
+        [
+          0,
+          0,
+          800,
+          1200
+        ],
+        [
+          800,
+          0,
+          800,
+          1200
+        ]
+      ]
+    }
+  ],
+  "verticalFrames": [
+    {
+      "sizes": [
+        [
+          720,
+          576
+        ],
+        [
+          600,
+          400
+        ],
+        [
+          720,
+          100
+        ]
+      ],
+      "document": [
+        720,
+        1076
+      ],
+      "frames": [
+        [
+          0,
+          0,
+          720,
+          576
+        ],
+        [
+          60,
+          576,
+          600,
+          400
+        ],
+        [
+          0,
+          976,
+          720,
+          100
+        ]
+      ],
+      "fitReference": [
+        720,
+        576
+      ]
+    }
+  ],
+  "verticalCurrentPage": [
+    {
+      "pageHeights": [
+        1000,
+        1000,
+        80
+      ],
+      "viewportY": [
+        1480,
+        2080
+      ],
+      "expectedIndex": 2,
+      "reason": "bottom-only pin; center still in page 1"
+    },
+    {
+      "pageHeights": [
+        1000,
+        1000,
+        80
+      ],
+      "viewportY": [
+        0,
+        600
+      ],
+      "expectedIndex": 0
+    },
+    {
+      "pageHeights": [
+        1000,
+        1000,
+        80
+      ],
+      "viewportY": [
+        900,
+        1500
+      ],
+      "expectedIndex": 1
+    }
+  ],
+  "zoom": [
+    {
+      "baseline": 0.5,
+      "current": 0.5,
+      "zoomIn": 0.625,
+      "zoomOut": 0.4,
+      "doubleClick": 1
+    },
+    {
+      "baseline": 0.5,
+      "current": 1.5,
+      "doubleClick": 0.5
+    },
+    {
+      "baseline": 6,
+      "current": 6,
+      "doubleClick": 10
+    }
+  ],
+  "fitReset": [
+    {
+      "force": true,
+      "initialFitApplied": true,
+      "autoFit": false,
+      "manuallyZoomed": true,
+      "expected": true
+    },
+    {
+      "force": false,
+      "initialFitApplied": false,
+      "autoFit": false,
+      "manuallyZoomed": true,
+      "expected": true
+    },
+    {
+      "force": false,
+      "initialFitApplied": true,
+      "autoFit": false,
+      "manuallyZoomed": false,
+      "expected": false
+    },
+    {
+      "force": false,
+      "initialFitApplied": true,
+      "autoFit": true,
+      "manuallyZoomed": true,
+      "expected": false
+    },
+    {
+      "force": false,
+      "initialFitApplied": true,
+      "autoFit": true,
+      "manuallyZoomed": false,
+      "expected": true
+    }
+  ],
+  "ocrTiles": [
+    {
+      "width": 720,
+      "height": 5000,
+      "tileHeight": 2400,
+      "overlap": 1000,
+      "expected": [
+        [
+          0,
+          2400
+        ],
+        [
+          1400,
+          2400
+        ],
+        [
+          2800,
+          2200
+        ]
+      ]
+    },
+    {
+      "width": 1200,
+      "height": 1800,
+      "expected": [
+        [
+          0,
+          1800
+        ]
+      ]
+    }
+  ],
+  "stripPlan": [
+    {
+      "pageSizes": [
+        [
+          720,
+          576
+        ],
+        [
+          720,
+          576
+        ],
+        [
+          720,
+          576
+        ],
+        [
+          720,
+          576
+        ],
+        [
+          720,
+          576
+        ]
+      ],
+      "bands": [
+        {
+          "top": 0,
+          "height": 2400,
+          "ownedRange": [
+            0,
+            1900
+          ],
+          "pageIndices": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        {
+          "top": 1400,
+          "height": 1480,
+          "ownedRange": [
+            1900,
+            2880
+          ],
+          "pageIndices": [
+            3,
+            4
+          ]
+        }
+      ],
+      "completedPagesAfterUnit0": [
+        0,
+        1,
+        2
+      ],
+      "completedPagesAfterBoth": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ]
+    }
+  ],
+  "detectorDecode": [
+    {
+      "imageSize": [
+        1000,
+        2000
+      ],
+      "score": 0.8,
+      "kind": 1,
+      "normalizedBox": [
+        0.5,
+        0.25,
+        0.2,
+        0.1
+      ],
+      "expectedRect": [
+        400,
+        400,
+        200,
+        200
+      ]
+    }
+  ],
+  "patchRects": [
+    {
+      "imageSize": [
+        720,
+        1200
+      ],
+      "rect": [
+        100,
+        120,
+        140,
+        260
+      ],
+      "glyph": 24,
+      "vertical": true,
+      "uniform": true,
+      "balloonRect": [
+        70,
+        90,
+        220,
+        320
+      ],
+      "expectedRect": [
+        92.8,
+        112.8,
+        159.8,
+        274.4
+      ]
+    }
+  ],
+  "aiReply": [
+    {
+      "input": "```text\n[p1-1] 안녕\n> - [p2-1]: “ありがとう → 고마워 / 다음에 봐”\n[p1-1] 나중 값\n[p9-9] unknown\n```",
+      "expectedParsed": {
+        "p1-1": "나중 값",
+        "p2-1": "고마워\n다음에 봐”",
+        "p9-9": "unknown"
+      },
+      "note": "Literal reference parser strips the last arrow before matching quote pairs; this deliberately tests an unmatched closing quote. Windows may improve paired-quote handling as a recorded parser change."
+    },
+    {
+      "input": "[p1-1] “안녕”\n[p2-1] 고마워 / 다음에 봐",
+      "expectedParsed": {
+        "p1-1": "안녕",
+        "p2-1": "고마워\n다음에 봐"
+      }
+    }
+  ],
+  "aiChanges": [
+    {
+      "sent": {
+        "p1-1": "안녕하세요",
+        "p2-1": "고마워",
+        "p3-1": "안녕히"
+      },
+      "reply": {
+        "p1-1": "안녕",
+        "p2-1": "고마워",
+        "p9-9": "모름"
+      },
+      "updates": {
+        "p1-1": "안녕"
+      },
+      "unchanged": 1,
+      "unknown": 1,
+      "missing": [
+        "p3-1"
+      ]
+    }
+  ],
+  "seriesStems": [
+    {
+      "name": "Story v01.cbz",
+      "stem": "story"
+    },
+    {
+      "name": "Story v02 (Digital).rar",
+      "stem": "story"
+    },
+    {
+      "name": "세평유 2화.zip",
+      "stem": "세평유"
+    },
+    {
+      "name": "01.cbz",
+      "stem": ""
+    },
+    {
+      "name": "02.rar",
+      "stem": ""
+    }
+  ],
+  "exportNames": [
+    {
+      "pageCount": 24,
+      "index": 0,
+      "extension": "png",
+      "expected": "001.png"
+    },
+    {
+      "pageCount": 1000,
+      "index": 998,
+      "extension": "jpg",
+      "expected": "0999.jpg"
+    }
+  ],
+  "wheel": [
+    {
+      "device": "discrete",
+      "normalizedDirection": "forward",
+      "edge": "bottom",
+      "timesSeconds": [
+        0,
+        0.1,
+        0.31
+      ],
+      "expected": [
+        "turnForward",
+        "swallow",
+        "turnForward"
+      ]
+    },
+    {
+      "device": "precisePhased",
+      "startsBlocked": true,
+      "deltasDIP": [
+        20,
+        25,
+        15
+      ],
+      "momentumDeltasDIP": [
+        30,
+        50
+      ],
+      "expectedChanged": [
+        "swallow",
+        "swallow",
+        "turnForward"
+      ],
+      "expectedMomentum": [
+        "swallow",
+        "swallow"
+      ]
+    },
+    {
+      "device": "precisePhased",
+      "startsBlocked": false,
+      "deltasDIP": [
+        30,
+        40,
+        60
+      ],
+      "reachesBottomAfterEvent": 1,
+      "expectedChanged": [
+        "pan",
+        "pan",
+        "pan"
+      ]
+    }
+  ]
+}
