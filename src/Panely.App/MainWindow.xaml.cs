@@ -577,6 +577,7 @@ public partial class MainWindow : Window
     {
         if (_closing) return;
         e.Cancel = true;
+        if (_feature.ExitWarning is { } warning && !ConfirmDialog.Show(this, Loc.T("Exit Panely?"), warning, Loc.T("Exit"))) return;
         _closing = true;
         try
         {

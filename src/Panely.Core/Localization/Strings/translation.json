@@ -128,5 +128,15 @@
   "The default language is what new series are shown in. Each series can be shown in another language, and each book's own language is detected the first time it's translated — both from the translation button in the toolbar, remembered per series.": {
     "en": "The language new series are translated into. This is not the book's own language: that is detected the first time a book is translated, and you can change it under Book's language at the top of the translation panel. Both are remembered per series.",
     "ko": "새 시리즈를 번역해서 보여 줄 언어입니다. 책의 원문 언어가 아닙니다. 원문 언어는 처음 번역할 때 자동으로 감지되며, 번역 패널 맨 위 '원문 언어'에서 바꿀 수 있습니다. 둘 다 시리즈별로 기억됩니다."
+  },
+  // 종료 확인: 작업 큐는 앱과 함께 사라지므로 "다시 시작하면 저절로 이어진다"고 하지 않는다.
+  "Exit Panely?": { "en": "Exit Panely?", "ko": "Panely를 종료할까요?" },
+  "Quitting Panely stops translating and exporting. Translated pages are kept, so starting again picks up where it left off.": {
+    "en": "Exiting Panely stops translating and exporting. Translated pages are kept, so starting again picks up where it left off.",
+    "ko": "Panely를 종료하면 번역과 내보내기가 멈춥니다. 번역한 페이지는 남아 있어서, 다시 시작하면 멈춘 곳부터 이어집니다."
+  },
+  "Quitting Panely stops translating. Finished pages are kept, and the rest continues when you start again.": {
+    "en": "Exiting Panely stops translating. Finished pages are kept, so translating again picks up where it left off.",
+    "ko": "Panely를 종료하면 번역이 멈춥니다. 완료한 페이지는 남아 있어서, 다시 번역하면 멈춘 곳부터 이어집니다."
   }
 }

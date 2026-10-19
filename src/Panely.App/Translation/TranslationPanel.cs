@@ -273,6 +273,10 @@ internal sealed class TranslationPanel : Border
         panel.Children.Add(auto);
 
         var (queue, _) = _f.SeriesVolumes(filterByStem: true);
+        // 자동 번역을 켜면 함께 번역할 다른 권(이름 몇 개만)
+        var also = queue.Where(t => t.BookKey != _f.Book?.BookKey).Select(t => t.Title).ToList();
+        if (also.Count > 0)
+            panel.Children.Add(Spaced(Ui.Caption(Loc.T("Also queues: %@", string.Join(", ", also.Take(3)) + (also.Count > 3 ? $" … (+{also.Count - 3})" : string.Empty))), 4));
         if (queue.Count > 1)
             panel.Children.Add(Spaced(Ui.Button(Loc.T("Translate Entire Series (%lld Volumes)", queue.Count), () => _f.TranslateSeries()), 8));
         panel.Children.Add(Spaced(Ui.Button(Loc.T("Translate This Book Again…"), () =>

@@ -60,25 +60,42 @@ public sealed partial class TranslationFeature
 
     // ───────────────────────── 툴바 언어 메뉴 ─────────────────────────
 
+    /// <summary>
+    /// 원본 Panely 메뉴 순서: 보기(원본·번역된 언어) / 다른 언어로 번역 ▸ / 이 페이지 다시 번역·AI 채팅으로 다듬기·번역 패널·말풍선 편집 / 내보내기.
+    /// </summary>
     public IReadOnlyList<Control> BuildLanguageMenuItems()
     {
         if (!IsEnabled || _book is null) return [];
+        var languages = TranslationLanguages.All.Where(l => l != _source).ToList();
         var items = new List<Control>
         {
-            Ui.MenuItem(Loc.T("Original (Translation Off)"), () => ChooseView(null), isChecked: !ShowingTranslation,
+            Ui.MenuItem(Loc.T("View"), () => { }, enabled: false),
+            Ui.MenuItem(Loc.T("Original"), () => ChooseView(null), isChecked: !ShowingTranslation,
                 gesture: GestureHint(CommandIds.TranslationToggle)),
         };
-        foreach (var lang in TranslationLanguages.All.Where(l => l != _source))
+        foreach (var lang in languages.Where(HasResults))
         {
-            var has = HasResults(lang);
-            var count = CompletedPages(lang);
-            var header = has ? $"{Loc.LanguageName(lang)}  {count}/{_book.Pages.Count}" : Loc.LanguageName(lang);
-            items.Add(Ui.MenuItem(header, () => { if (has) ChooseView(lang); else StartLanguage(lang, switchVisible: true); },
-                isChecked: ShowingTranslation && _visible == lang,
-                tooltip: has ? null : Loc.T("Not translated yet — click to translate this book into it")));
+            items.Add(Ui.MenuItem($"{Loc.LanguageName(lang)}  {CompletedPages(lang)}/{_book.Pages.Count}", () => ChooseView(lang),
+                isChecked: ShowingTranslation && _visible == lang));
         }
         items.Add(new Separator());
+        var other = new MenuItem { Header = Loc.T("Translate into Another Language") };
+        foreach (var lang in languages.Where(l => !HasResults(l)))
+        {
+            other.Items.Add(Ui.MenuItem(Loc.LanguageName(lang), () => StartLanguage(lang, switchVisible: true),
+                tooltip: Loc.T("Not translated yet — click to translate this book into it")));
+        }
+        other.IsEnabled = other.Items.Count > 0;
+        items.Add(other);
+        items.Add(new Separator());
+        var page = _host?.CurrentPageIndex ?? 0;
+        items.Add(Ui.MenuItem(Loc.T("Translate This Page Again"), () => RetranslatePage(page),
+            enabled: _host is not null && (_source is not null || HasResultsOrJob)));
+        items.Add(Ui.MenuItem(Loc.T("Improve with an AI Chat…"), ShowAiChat, enabled: _visible is not null && _translated.Count > 0));
         items.Add(Ui.MenuItem(Loc.T("Translation Panel…"), ShowPanel));
+        items.Add(Ui.MenuItem(_editing ? Loc.T("Done Editing Balloons") : Loc.T("Edit Balloons"), ToggleEditMode,
+            enabled: _editing || CanEdit, gesture: GestureHint(CommandIds.TranslationEdit)));
+        items.Add(new Separator());
         items.Add(Ui.MenuItem(Loc.T("Export Translated Book…"), ShowExport, enabled: CanExport));
         items.Add(Ui.MenuItem(Loc.T("Jobs"), ShowJobs, gesture: GestureHint(CommandIds.JobsShow)));
         return items;

@@ -26,6 +26,7 @@ internal sealed class AiChatSheet : SheetWindow
     private readonly Button _undo;
     private readonly TextBox _from;
     private readonly TextBox _to;
+    private readonly TextBlock _count;
     private bool _wholeBook = true;
     private AiChatSnapshot? _snapshot;
     private string? _fileName;
@@ -49,15 +50,18 @@ internal sealed class AiChatSheet : SheetWindow
         _to = Ui.TextBox(book.Pages.Count.ToString(System.Globalization.CultureInfo.InvariantCulture));
         _from.Width = _to.Width = 64;
         _from.IsEnabled = _to.IsEnabled = false;
-        body.Children.Add(Gap(Ui.Radio(Loc.T("Whole Book"), "ai-scope", true, () => { _wholeBook = true; _from.IsEnabled = _to.IsEnabled = false; _snapshot = null; }), 4));
-        var choose = Ui.Radio(Loc.T("Choose Pages"), "ai-scope", false, () => { _wholeBook = false; _from.IsEnabled = _to.IsEnabled = true; _snapshot = null; });
+        body.Children.Add(Gap(Ui.Radio(Loc.T("Whole Book"), "ai-scope", true, () => { _wholeBook = true; _from.IsEnabled = _to.IsEnabled = false; RangeChanged(); }), 4));
+        var choose = Ui.Radio(Loc.T("Choose Pages"), "ai-scope", false, () => { _wholeBook = false; _from.IsEnabled = _to.IsEnabled = true; RangeChanged(); });
         var range = Ui.Row(choose, Spaced(Ui.Caption(Loc.T("From page")), 12), Spaced(_from, 6), Spaced(Ui.Caption(Loc.T("To page")), 12), Spaced(_to, 6));
-        _from.TextChanged += (_, _) => _snapshot = null;
-        _to.TextChanged += (_, _) => _snapshot = null;
+        _from.TextChanged += (_, _) => RangeChanged();
+        _to.TextChanged += (_, _) => RangeChanged();
         body.Children.Add(Gap(range, 4));
+        _count = Ui.Text(string.Empty, "Text.Caption");
+        body.Children.Add(Gap(_count, 6));
 
         var save = Ui.Button(Loc.T("Save as Text File…"), SaveFile, accent: true);
         body.Children.Add(Gap(save, 14));
+        body.Children.Add(Gap(Ui.Caption(Loc.T("The balloons, a line each: [id] original → translation.")), 2));
 
         body.Children.Add(Gap(Ui.Section(Loc.T("Copy Prompt")), 14));
         body.Children.Add(Gap(Ui.Caption(Loc.T("Paste this into the chat along with the file. Change it if you like.")), 2));
@@ -82,6 +86,14 @@ internal sealed class AiChatSheet : SheetWindow
         body.Children.Add(Gap(close, 12));
         SetBody(body, save);
         _prompt.Text = AiChatPrompt.Build(new AiChatSnapshot(book.BookKey, book.Title, source, target, []), FileNameFor());
+        RangeChanged();
+    }
+
+    /// <summary>범위가 바뀌면 파일에 담길 말풍선 수를 다시 센다. 응답은 저장할 때 만든 snapshot에 맞추므로 기존 snapshot은 버린다.</summary>
+    private void RangeChanged()
+    {
+        _snapshot = null;
+        _count.Text = $"{Loc.T("Balloons")}: {BuildSnapshot().Entries.Count}";
     }
 
     public static void Show(Window? owner, TranslationFeature feature)

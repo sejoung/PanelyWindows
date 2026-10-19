@@ -237,8 +237,16 @@ internal sealed class EditBar : Border
         DockPanel.SetDock(right, Dock.Right);
         dock.Children.Add(right);
         var left = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        left.Children.Add(Ui.Text(Loc.T("Editing Balloons"), "Text.Body", wrap: false));
-        left.Children.Add(Ui.Caption(Loc.T("Click a balloon to correct it — drag over text that was missed to add one")));
+        // 제목 옆에 이 책에서 고친·숨긴 말풍선 수(숨김도 수정 기록이라 따로 뺀다)
+        var edits = _feature.Book is { } book ? _feature.Service.Edits.ForBook(book.BookKey).SelectMany(e => e.Bubbles).ToList() : [];
+        var hidden = edits.Count(b => b.IsHidden);
+        var title = Loc.T("Editing Balloons");
+        if (edits.Count - hidden > 0) title += " · " + Loc.T("%lld edited", edits.Count - hidden);
+        if (hidden > 0) title += " · " + Loc.T("%lld Hidden", hidden);
+        left.Children.Add(Ui.Text(title, "Text.Body", wrap: false));
+        left.Children.Add(Ui.Caption(hidden > 0
+            ? Loc.T("Click a balloon to correct it, or a dashed outline to bring a hidden balloon back. Drag over text that wasn't translated to add a balloon there.")
+            : Loc.T("Click a balloon to correct it — drag over text that was missed to add one")));
         dock.Children.Add(left);
         Child = dock;
     }

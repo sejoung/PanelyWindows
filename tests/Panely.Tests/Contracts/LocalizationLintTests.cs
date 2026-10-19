@@ -12,12 +12,16 @@ namespace Panely.Tests.Contracts;
 /// </summary>
 public partial class LocalizationLintTests
 {
-    // Loc.T("key" …), Loc.TIn(lang, "key" …), MenuCommand("key", …) 의 첫 문자열 리터럴
-    [GeneratedRegex("""(?:Loc\.T\(\s*|Loc\.TIn\(\s*[^,()]+,\s*|MenuCommand\(\s*)"((?:[^"\\]|\\.)*)"(?=\s*[,)])""")]
+    // Loc.T("key" …), Loc.TIn(lang, "key" …), MenuCommand("key", …), TopMenu("key", …) 의 첫 문자열 리터럴
+    [GeneratedRegex("""(?:Loc\.T\(\s*|Loc\.TIn\(\s*[^,()]+,\s*|MenuCommand\(\s*|TopMenu\(\s*)"((?:[^"\\]|\\.)*)"(?=\s*[,)])""")]
     private static partial Regex KeyLiteral();
 
     [GeneratedRegex(@"%(?:(\d+)\$)?(?:l{0,2}|h|q|z)?[@dixufgs]")]
     private static partial Regex Placeholder();
+
+    // "Mac" 단어(Machine 같은 단어 안의 Mac은 제외). 한국어 문장 안의 "Mac"도 잡는다.
+    [GeneratedRegex(@"(?<![A-Za-z])Mac(?![A-Za-z])")]
+    private static partial Regex MacWord();
 
     private static IEnumerable<(string File, int Line, string Key)> UsedKeys()
     {
@@ -89,6 +93,8 @@ public partial class LocalizationLintTests
                 if (en.GetString()!.Contains(mac, StringComparison.Ordinal) || ko.GetString()!.Contains(mac, StringComparison.Ordinal))
                     problems.Add($"macOS 표현 '{mac}': {entry.Name}");
             }
+            if (MacWord().IsMatch(en.GetString()!) || MacWord().IsMatch(ko.GetString()!))
+                problems.Add($"macOS 표현 'Mac': {entry.Name}");
         }
         Assert.True(problems.Count == 0, string.Join('\n', problems));
     }
@@ -127,6 +133,7 @@ public partial class LocalizationLintTests
                 var text = Loc.TIn(lang, key);
                 foreach (var mac in MacWording)
                     if (text.Contains(mac, StringComparison.Ordinal)) problems.Add($"[{lang}] '{mac}' in \"{key}\" → \"{text}\"");
+                if (MacWord().IsMatch(text)) problems.Add($"[{lang}] 'Mac' in \"{key}\" → \"{text}\"");
             }
         }
         Assert.True(problems.Count == 0, string.Join('\n', problems));

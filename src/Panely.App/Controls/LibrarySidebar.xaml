@@ -64,7 +64,7 @@
     <Border BorderBrush="{DynamicResource Brush.BorderSubtle}" BorderThickness="0,0,1,0">
         <DockPanel>
             <!-- 헤더: 가로 padding 8, 세로 4, 32 DIP 새로고침/핀 -->
-            <Border DockPanel.Dock="Top" Padding="8,4" BorderBrush="{DynamicResource Brush.BorderSubtle}" BorderThickness="0,0,0,1">
+            <Border x:Name="HeaderBar" DockPanel.Dock="Top" Padding="8,4" Background="Transparent" BorderBrush="{DynamicResource Brush.BorderSubtle}" BorderThickness="0,0,0,1">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />

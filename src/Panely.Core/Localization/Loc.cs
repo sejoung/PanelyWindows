@@ -7,7 +7,7 @@ namespace Panely.Core.Localization;
 
 /// <summary>
 /// 한영 문구 조회(08-commands-and-copy.md).
-/// 1) windows-strings.json(Windows 전용/대체 문구) → 2) localization.catalog.json 원본 → 3) 영어 sourceKey.
+/// 1) Strings/*.json(Windows 전용/대체 문구) → 2) localization.catalog.json 원본 → 3) 영어 sourceKey. 규칙은 ADR 0006.
 /// 원본 치환자(%@, %lld, %1$@, %2$lld, %%)는 위치 인덱스를 보존해 변환하고, 인자는 format string으로 해석하지 않는다.
 /// </summary>
 public static class Loc

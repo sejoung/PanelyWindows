@@ -52,5 +52,6 @@ public sealed class NullTranslationFeature : ITranslationFeature
         Foreground = (Brush)Application.Current.FindResource("Brush.TextSecondary"),
     };
 
+    public string? ExitWarning => null;
     public Task ShutdownAsync() => Task.CompletedTask;
 }

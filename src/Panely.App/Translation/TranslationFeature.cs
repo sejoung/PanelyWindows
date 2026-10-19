@@ -418,6 +418,19 @@ public sealed partial class TranslationFeature : ITranslationFeature, IDisposabl
 
     public FrameworkElement CreateExperimentalSettingsView() => new ExperimentalSettingsView(this);
 
+    public string? ExitWarning
+    {
+        get
+        {
+            // 작업 큐는 앱과 함께 사라진다. 완료 쪽은 캐시에 남으므로 다시 시작하면 이어서 번역한다.
+            if (Service.Exports.Jobs.Any(j => !j.IsTerminal))
+                return Loc.T("Quitting Panely stops translating and exporting. Translated pages are kept, so starting again picks up where it left off.");
+            if (Service.Scheduler.Jobs.Any(j => j.IsRunningOrQueued))
+                return Loc.T("Quitting Panely stops translating. Finished pages are kept, and the rest continues when you start again.");
+            return null;
+        }
+    }
+
     public async Task ShutdownAsync()
     {
         CloseTransientUi();

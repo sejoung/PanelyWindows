@@ -91,6 +91,8 @@ public partial class LibrarySidebar : UserControl
         AutomationProperties.SetName(RefreshButton, Loc.T("Refresh File Tree"));
         RootName.Text = _rootPath is null ? Loc.T("Library") : DisplayName(_rootPath);
         RootName.ToolTip = _rootPath;
+        // 헤더 우클릭: 라이브러리 루트 바꾸기(파일 › 폴더 열기와 달리 책을 열지 않는다)
+        HeaderBar.ContextMenu = Menu(MenuItem(Loc.T("Change Library Root…"), () => PickFolderRequested?.Invoke()));
         RefreshButton.IsEnabled = _rootPath is not null;
         OverflowText.Text = Loc.T("Too many changes to follow automatically. Click Refresh File Tree to update the list.");
     }

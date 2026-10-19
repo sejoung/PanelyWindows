@@ -150,6 +150,9 @@ public interface ITranslationFeature
     /// <summary>설정 창 "실험" 탭 내용.</summary>
     FrameworkElement CreateExperimentalSettingsView();
 
+    /// <summary>실행 중이거나 대기 중인 번역·내보내기가 있으면 종료 확인 문구, 없으면 null.</summary>
+    string? ExitWarning { get; }
+
     /// <summary>종료: 작업 중지, partial 정리. 완료 캐시는 남긴다.</summary>
     Task ShutdownAsync();
 }
