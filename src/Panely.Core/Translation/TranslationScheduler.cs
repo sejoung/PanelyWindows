@@ -114,6 +114,7 @@ public sealed class TranslationScheduler : IAsyncDisposable
                 job.Plan = null;
                 job.StripBubbles.Clear();
                 job.CompletedBands.Clear();
+                job.StripUnfinished.Clear();
             }
             job.UserPaused = false;
             job.Attempted.Clear();
@@ -123,6 +124,9 @@ public sealed class TranslationScheduler : IAsyncDisposable
             else job.Only = null;
             if (job.Phase is TranslationPhase.Completed or TranslationPhase.Failed or TranslationPhase.Paused or TranslationPhase.Idle)
             {
+                // 다시 시작하면 끝나지 못한 쪽을 실제로 다시 읽는다. band 상태는 작업 스레드가 다음 실행 시작 때 정리한다.
+                job.ResetUnfinished = true;
+                job.LastError = null;
                 job.Phase = TranslationPhase.Queued;
                 job.Reason = TranslationStopReason.None;
                 job.ReasonMessage = null;
@@ -476,9 +480,24 @@ public sealed class TranslationScheduler : IAsyncDisposable
             {
                 j.Phase = TranslationPhase.Failed;
                 j.Reason = TranslationStopReason.Failed;
-                j.ReasonMessage = Loc.T("Translation was stopped before the book was finished.");
+                j.ReasonMessage = j.LastError ?? Loc.T("Translation was stopped before the book was finished.");
             }
         });
+    }
+
+    /// <summary>
+    /// strip 작업을 다시 시작할 때: 끝나지 못한 쪽이 걸친 band를 완료 목록에서 빼고 그 쪽들의 풍선을 비운다.
+    /// 그대로 두면 band가 이미 끝난 것으로 보여 다시 읽지 않고 곧바로 같은 실패로 끝난다.
+    /// 빼낸 band가 걸친 다른 미완료 쪽도 자기 band가 모두 빠지므로 풍선이 중복되지 않는다.
+    /// </summary>
+    private static void ResetUnfinishedStrip(Job job)
+    {
+        if (job.Plan is not { } plan) return;
+        var unfinished = Enumerable.Range(0, plan.PageRects.Count).Where(p => !job.Completed.Contains(p)).ToHashSet();
+        foreach (var band in plan.Bands)
+            if (band.PageIndices.Any(unfinished.Contains)) job.CompletedBands.Remove(band.Index);
+        foreach (var p in unfinished) job.StripBubbles.Remove(p);
+        job.StripUnfinished.Clear();
     }
 
     private async Task TranslatePageAsync(Job job, OpenedBook book, int pageIndex, string source, CancellationToken ct)
@@ -517,24 +536,37 @@ public sealed class TranslationScheduler : IAsyncDisposable
         PageUpdated?.Invoke(this, new TranslationPageUpdate(book.BookKey, job.Target, pageIndex, page));
     }
 
-    /// <summary>풍선을 묶음 단위로 번역해 도착하는 대로 갱신한다. 결과는 ID로 맞춘다.</summary>
+    /// <summary>
+    /// 풍선을 묶음 단위로 번역해 도착하는 대로 갱신한다. 결과는 ID로 맞춘다.
+    /// 번역기가 오류 없이 빈 결과·원문 그대로를 낸 풍선(예: M2M100이 "かしこまりました"·"くっく" 같은 짧은 대사에서 바로 끝냄)은
+    /// translation=null로 두고 끝난 것으로 본다. 화면에는 원문이 그대로 보이고 말풍선 편집에서 직접 번역을 넣을 수 있다.
+    /// 그런 풍선 하나 때문에 쪽이 끝나지 않으면 책 전체가 "중지"로 끝나고 다시 해도 같은 곳에서 멈춘다.
+    /// 오류가 나거나 결과가 오지 않은 풍선이 있으면 IsComplete=false(다시 시도할 대상)다.
+    /// </summary>
     private async Task<TranslatedPage> TranslateBubblesAsync(Job job, string bookKey, int pageIndex, TranslatedPage page, string source, CancellationToken ct)
     {
         var bubbles = page.Bubbles.ToList();
         // 대기 목록을 먼저 고정한다. 루프 안에서 bubbles[index]를 바꾸므로 지연 열거하면 List 버전이 바뀌어 예외가 난다.
         var pending = bubbles.Where(b => b.Translation is null).ToList();
+        var unresolved = 0;
+        var untranslatable = 0;
         foreach (var chunk in pending.Chunk(Math.Max(1, _options.TranslateChunk)))
         {
             ct.ThrowIfCancellationRequested();
             var request = chunk.Select(b => new TranslationRequestItem(b.Id.ToString(System.Globalization.CultureInfo.InvariantCulture), b.Source)).ToList();
             var results = await _providers.Translator.TranslateAsync(request, source, job.Target, job.Mode, ct).ConfigureAwait(false);
+            var answered = new HashSet<int>();
             foreach (var r in results)
             {
                 if (!int.TryParse(r.Id, out var id)) continue;
                 var index = bubbles.FindIndex(b => b.Id == id);
-                if (index < 0 || !IsValidTranslation(bubbles[index].Source, r.Text, job.Target)) continue;
+                if (index < 0) continue;
+                if (r.Error is { } error) { job.LastError = error; continue; }
+                answered.Add(id);
+                if (!IsValidTranslation(bubbles[index].Source, r.Text, job.Target)) { untranslatable++; continue; }
                 bubbles[index] = bubbles[index] with { Translation = r.Text!.Trim() };
             }
+            unresolved += chunk.Count(b => !answered.Contains(b.Id));
             if (!job.FirstResult)
             {
                 job.FirstResult = true;
@@ -561,7 +593,10 @@ public sealed class TranslationScheduler : IAsyncDisposable
             }
             speechChecked = true;
         }
-        return page with { Bubbles = bubbles, IsComplete = bubbles.All(b => b.Translation is not null), SpeechLevelChecked = speechChecked };
+        // 원문·번역 본문은 남기지 않고 개수만 기록한다
+        if (untranslatable > 0)
+            _diagnostics?.Log(LogLevel.Info, LogCategory.Translation, $"Page {pageIndex + 1}: translator returned no text for {untranslatable} balloon(s); left untranslated");
+        return page with { Bubbles = bubbles, IsComplete = unresolved == 0, SpeechLevelChecked = speechChecked };
     }
 
     public static bool IsSpeechPair(string source, string target) =>
@@ -577,6 +612,11 @@ public sealed class TranslationScheduler : IAsyncDisposable
         }
         var plan = job.Plan;
         var revision = ProviderRevision(job.Mode);
+        lock (_gate)
+        {
+            if (job.ResetUnfinished) ResetUnfinishedStrip(job);
+            job.ResetUnfinished = false;
+        }
 
         // 이미 완료된 쪽의 캐시를 게시
         foreach (var p in job.Completed.ToList())
@@ -628,6 +668,8 @@ public sealed class TranslationScheduler : IAsyncDisposable
             var centerY = band.Top + b.Rect.CenterY;
             if (!band.Owns(centerY)) continue; // 중심 Y를 소유하는 band에서 한 번만 채택
             var page = plan.PageAtY(centerY);
+            // 이미 끝난(캐시에 있는) 쪽은 다시 번역하지 않는다. 다시 넣으면 완성된 쪽 화면이 부분 결과로 덮인다.
+            if (job.Completed.Contains(page)) continue;
             var origin = plan.PageRects[page];
             var dx = -origin.X; var dy = band.Top - origin.Y;
             var local = b with
@@ -647,6 +689,8 @@ public sealed class TranslationScheduler : IAsyncDisposable
             var partial = BuildStripPage(job, book, p, source, revision, complete: false);
             var translated = await TranslateBubblesAsync(job, book.BookKey, p, partial, source, ct).ConfigureAwait(false);
             job.StripBubbles[p] = translated.Bubbles.ToList();
+            if (translated.IsComplete) job.StripUnfinished.Remove(p);
+            else job.StripUnfinished.Add(p);
         }
 
         Update(job, j => j.CompletedBands.Add(band.Index));
@@ -683,7 +727,7 @@ public sealed class TranslationScheduler : IAsyncDisposable
             AnalysisVersion = PageAnalyzer.AnalysisVersion,
             ImageWidth = Math.Max(1, rect.Width),
             ImageHeight = Math.Max(1, rect.Height),
-            IsComplete = complete && bubbles.All(b => b.Translation is not null),
+            IsComplete = complete && !job.StripUnfinished.Contains(page),
             Bubbles = bubbles,
         };
     }
@@ -885,6 +929,12 @@ public sealed class TranslationScheduler : IAsyncDisposable
         public Dictionary<int, List<TranslatedBubble>> StripBubbles { get; } = [];
         public HashSet<int> CompletedBands { get; } = [];
         public HashSet<int> AttemptedBands { get; } = [];
+        /// <summary>strip: 번역기 오류로 아직 끝나지 않은 풍선이 있는 쪽.</summary>
+        public HashSet<int> StripUnfinished { get; } = [];
+        /// <summary>끝나거나 멈춘 작업을 다시 시작함: 다음 strip 실행 시작 때 끝나지 못한 쪽의 band를 다시 연다.</summary>
+        public bool ResetUnfinished { get; set; }
+        /// <summary>마지막 번역기 오류(끝나지 못한 쪽이 남을 때 안내에 쓴다).</summary>
+        public string? LastError { get; set; }
         public Dictionary<int, PagePixels> PixelCache { get; } = [];
         public Queue<int> PixelOrder { get; } = new();
     }

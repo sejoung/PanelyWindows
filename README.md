@@ -1,7 +1,7 @@
 # Panely for Windows
 
 로컬 만화·이미지를 읽는 Windows 리더입니다. 폴더·CBZ/ZIP·CBR/RAR을 열고 한 장/두 장/세로 스크롤, 오른쪽→왼쪽 읽기, 라이브러리, 이어보기, 북마크를 제공합니다. 실험 기능으로 기기 안에서 말풍선을 번역해 보여주고 번역본을 내보냅니다.
-명세는 [`docs/windows/`](docs/windows/README.md), 기능별 구현·검수 현황은 [`docs/IMPLEMENTATION-STATUS.md`](docs/IMPLEMENTATION-STATUS.md)에 있습니다.
+명세는 [`docs/windows/`](docs/windows/README.md), 기능별 구현·검수 현황은 [`docs/IMPLEMENTATION-STATUS.md`](docs/IMPLEMENTATION-STATUS.md), 명세에 없던 설계 결정은 [`docs/adr/`](docs/adr/)에 있습니다.
 
 ## 구성
 

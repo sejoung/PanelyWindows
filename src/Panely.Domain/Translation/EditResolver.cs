@@ -20,6 +20,8 @@ public enum BubbleTextState
     AddedNoText,
     /// <summary>사용자가 추가한 풍선, 이 언어로 아직 번역 안 됨.</summary>
     AddedNotTranslated,
+    /// <summary>번역이 끝난 쪽인데 번역기가 글을 내지 못함(짧은 감탄사 등). 패치 없이 원문을 보인다.</summary>
+    Untranslated,
 }
 
 /// <summary>화면/내보내기에 쓰는 런타임 풍선(캐시 원본+수정 조합).</summary>
@@ -75,13 +77,16 @@ public static class EditResolver
         return best;
     }
 
+    /// <param name="pageComplete">번역이 끝난 쪽인가. 끝난 쪽의 translation=null은 대기(…)가 아니라 <see cref="BubbleTextState.Untranslated"/>다.</param>
     public static List<DisplayBubble> Resolve(
         IReadOnlyList<TranslatedBubble> machine,
         PageEdits? edits,
         string target,
-        Func<int, bool>? isRetranslationPending = null)
+        Func<int, bool>? isRetranslationPending = null,
+        bool pageComplete = false)
     {
         var result = new List<DisplayBubble>(machine.Count + (edits?.Bubbles.Count ?? 0));
+        var missing = pageComplete ? BubbleTextState.Untranslated : BubbleTextState.Pending;
         foreach (var b in machine)
         {
             var index = FindEditIndex(edits, b.Source, b.Rect);
@@ -99,13 +104,13 @@ public static class EditResolver
                     RecognizedSource = b.Source,
                     EffectiveSource = b.Source,
                     Text = b.Translation,
-                    State = b.Translation is null ? BubbleTextState.Pending : BubbleTextState.Machine,
+                    State = b.Translation is null ? missing : BubbleTextState.Machine,
                     MachineId = b.Id,
                 });
                 continue;
             }
 
-            var (text, state) = ResolveText(edit, target, b.Translation, index, isRetranslationPending);
+            var (text, state) = ResolveText(edit, target, b.Translation, index, isRetranslationPending, missing);
             result.Add(new DisplayBubble
             {
                 Id = b.Id,
@@ -158,7 +163,7 @@ public static class EditResolver
         return result;
     }
 
-    private static (string? Text, BubbleTextState State) ResolveText(BubbleEdit edit, string target, string? machine, int index, Func<int, bool>? pending)
+    private static (string? Text, BubbleTextState State) ResolveText(BubbleEdit edit, string target, string? machine, int index, Func<int, bool>? pending, BubbleTextState missing)
     {
         if (edit.Translations.TryGetValue(target, out var user) && user.Length > 0) return (user, BubbleTextState.UserTranslation);
         if (edit.CorrectedSource is not null)
@@ -168,7 +173,7 @@ public static class EditResolver
                 ? (machine, BubbleTextState.CorrectedPending)
                 : (machine, BubbleTextState.CorrectedNeedsRetranslation);
         }
-        return (machine, machine is null ? BubbleTextState.Pending : BubbleTextState.Machine);
+        return (machine, machine is null ? missing : BubbleTextState.Machine);
     }
 
     /// <summary>읽기/내보내기용: 숨김 제외, 글자가 있는 풍선만 patch 원본으로.</summary>
@@ -181,7 +186,7 @@ public static class EditResolver
             var text = b.Text;
             if (string.IsNullOrEmpty(text))
             {
-                if (!includePending || b.State is BubbleTextState.AddedNoText) continue;
+                if (!includePending || b.State is BubbleTextState.AddedNoText or BubbleTextState.Untranslated) continue;
                 text = pendingText;
             }
             list.Add(new PatchSource(b.Id, b.Rect, b.GlyphSize, b.IsVertical, b.Background, b.BalloonRect, text));

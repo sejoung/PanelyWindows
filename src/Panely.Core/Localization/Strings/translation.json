@@ -6,6 +6,10 @@
     "en": "Correct translations, fix misread originals and hide balloons, right on the page (%@)",
     "ko": "페이지 위에서 바로 번역을 고치고, 잘못 읽은 원문을 바로잡고, 말풍선을 숨깁니다 (%@)"
   },
+  "Couldn't translate this balloon, so the original is shown. You can type one with Edit Translation.": {
+    "en": "Couldn't translate this balloon, so the original is shown. You can type one with Edit Translation.",
+    "ko": "이 말풍선은 번역하지 못해 원문을 그대로 보여 줍니다. 번역 고치기에서 직접 입력할 수 있습니다."
+  },
   "Developer test provider": { "en": "Developer test provider", "ko": "개발자 테스트 공급자" },
   "Fast uses a smaller, quantized model; Accurate uses the full-precision model with a wider search and takes longer. Each mode downloads its own language pack.": {
     "en": "Fast uses a smaller, quantized model; Accurate uses the full-precision model with a wider search and takes longer. Each mode downloads its own language pack.",

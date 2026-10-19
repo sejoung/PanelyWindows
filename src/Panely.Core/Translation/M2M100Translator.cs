@@ -147,6 +147,7 @@ public sealed class M2M100Translator : ITranslator, IDisposable
         private readonly Dictionary<string, int> _vocab;
         private readonly Dictionary<int, string> _inverse;
         private readonly Dictionary<string, int> _langIds = new();
+        private readonly HashSet<long> _langTokens = [];
         private readonly string _hiddenName;
         private readonly string _logitsName;
         private readonly int _beams;
@@ -177,6 +178,7 @@ public sealed class M2M100Translator : ITranslator, IDisposable
                 var token = $"__{FairseqLanguages[i]}__";
                 var id = _vocab.TryGetValue(token, out var existing) ? existing : size + i;
                 _langIds[FairseqLanguages[i]] = id;
+                _langTokens.Add(id);
                 _inverse.TryAdd(id, token);
             }
             _hiddenName = hiddenName;
@@ -281,7 +283,7 @@ public sealed class M2M100Translator : ITranslator, IDisposable
                         var history = tokens[row];
                         foreach (var (token, lp) in TopK(LogSoftmax(logits[row]), Math.Max(3, k * 2 + 1)))
                         {
-                            if (token == Pad || token == Bos) continue;
+                            if (IsBlocked(token)) continue;
                             // 같은 3-gram 반복 금지(HF no_repeat_ngram_size=3과 같은 뜻): 잡음 원문에서 "는 는 는…"처럼 도는 것을 막는다
                             if (RepeatsTrigram(history, token)) continue;
                             candidates.Add((row, token, scores[row] + lp));
@@ -432,9 +434,12 @@ public sealed class M2M100Translator : ITranslator, IDisposable
                     var row = new float[vocab];
                     for (var v = 0; v < vocab; v++) row[v] = logits[b, len - 1, v];
                     var logSoftmax = LogSoftmax(row);
-                    foreach (var (token, lp) in TopK(logSoftmax, _beams))
+                    var taken = 0;
+                    foreach (var (token, lp) in TopK(logSoftmax, _beams * 2 + 2))
                     {
-                        if (token == Pad || token == Bos) continue;
+                        if (taken == _beams) break;
+                        if (IsBlocked(token)) continue;
+                        taken++;
                         var tokens = new List<long>(active[b].Tokens) { token };
                         candidates.Add((tokens, active[b].Score + lp, token == Eos));
                     }
@@ -448,6 +453,14 @@ public sealed class M2M100Translator : ITranslator, IDisposable
             var best = beams.OrderByDescending(b => b.Score / Math.Pow(b.Tokens.Count, 1.0)).First().Tokens;
             return DecodeTokens(best.Skip(2));
         }
+
+        /// <summary>
+        /// 만들지 않을 토큰. 언어 태그·&lt;unk&gt;는 글자로 풀리지 않아 빈 번역이 되므로 다음 후보를 쓴다.
+        /// 첫 토큰의 &lt;/s&gt;(모델이 번역하지 않기로 함)는 막지 않는다: 막아 보면 "かしこまりました" → "엉덩이 났다."처럼
+        /// 엉뚱한 문장이 나와, 빈 결과로 두고 원문을 그대로 보이는 편이 낫다.
+        /// </summary>
+        private bool IsBlocked(long token)
+            => token == Pad || token == Bos || token == Unk || _langTokens.Contains(token);
 
         private string DecodeTokens(IEnumerable<long> ids)
         {

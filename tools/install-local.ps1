@@ -39,7 +39,9 @@ if ($Runtime -eq 'auto') {
 $dotnet = Get-Dotnet
 Write-Note "SDK: $dotnet ($(& $dotnet --version))"
 $commit = Get-GitShortHash
-$stamp = Get-Date -Format 'yyyyMMdd.HHmm'
+# SemVer 숫자 식별자는 앞자리 0을 허용하지 않는다("0950"이면 NuGet 복원이 오류 없이 실패). 시각은 정수로 적어 순서는 유지한다.
+$now = Get-Date
+$stamp = '{0}.{1}' -f $now.ToString('yyyyMMdd'), [int]$now.ToString('HHmm')
 $versionSuffix = "dev.$stamp"
 
 # 1) 테스트

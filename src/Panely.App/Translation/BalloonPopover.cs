@@ -76,6 +76,7 @@ internal sealed class BalloonPopover : Border
         BubbleTextState.AddedNoText => Loc.T("Balloon you added — no text was read; type it with Fix Original"),
         BubbleTextState.AddedNotTranslated => Loc.T("Balloon you added — not translated into this language yet"),
         BubbleTextState.Pending => Loc.T("Translating…"),
+        BubbleTextState.Untranslated => Loc.T("Couldn't translate this balloon, so the original is shown. You can type one with Edit Translation."),
         _ => Loc.T("Machine translation"),
     };
 

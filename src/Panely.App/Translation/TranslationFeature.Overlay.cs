@@ -42,7 +42,7 @@ public sealed partial class TranslationFeature
         if ((w <= 0 || h <= 0) && _host?.GetPageSize(pageIndex) is { } size) { w = size.Width; h = size.Height; }
         if (w <= 0 || h <= 0) return null;
         var bubbles = EditResolver.Resolve(page?.Bubbles ?? [], edits, target,
-            index => _pendingRetranslations.Contains((entry.PageId, index, target)));
+            index => _pendingRetranslations.Contains((entry.PageId, index, target)), pageComplete: page?.IsComplete ?? false);
         return (page, bubbles, w, h);
     }
 

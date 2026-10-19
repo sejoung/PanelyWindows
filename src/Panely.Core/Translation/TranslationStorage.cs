@@ -181,8 +181,8 @@ public sealed class TranslationCache
     /// <returns>generation이 바뀌었거나 미완료 쪽이면 false(기록하지 않음).</returns>
     public bool Store(TranslationCacheKey key, TranslatedPage page, int generation)
     {
+        // 완료된 쪽의 translation=null 풍선은 "번역기가 글을 내지 못함"이다(06: translation nullable)
         if (!page.IsComplete || generation != Generation) return false;
-        if (page.Bubbles.Any(b => b.Translation is null)) return false;
         TranslationJson.AtomicWrite(PathFor(key), TranslationJson.Serialize(page));
         if (generation != Generation) { TryDelete(PathFor(key)); return false; }
         return true;
