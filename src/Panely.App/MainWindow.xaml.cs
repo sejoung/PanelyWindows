@@ -293,10 +293,7 @@ public partial class MainWindow : Window
         var showSlider = hasBook && _session.PageCount >= 2;
         Slider.Visibility = showSlider ? (_chromeVisible ? Visibility.Visible : Visibility.Hidden) : Visibility.Collapsed;
         if (hasBook)
-        {
-            var translated = _feature.IsEnabled ? _feature.TranslatedPageIndices : new HashSet<int>();
-            Slider.Update(book!.Volumes.Count > 1 ? book.VolumeIndex : -1, book.Volumes.Count, _session.Spread, _session.PageCount, translated);
-        }
+            Slider.Update(book!.Volumes.Count > 1 ? book.VolumeIndex : -1, book.Volumes.Count, _session.Spread, _session.PageCount);
 
         // 썸네일
         var thumbs = _state.Settings.ThumbnailSidebarVisible && hasBook;

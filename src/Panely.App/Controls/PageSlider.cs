@@ -13,13 +13,13 @@ namespace Panely.App.Controls;
 
 /// <summary>
 /// 페이지 트랙(02): 높이 2, thumb 지름 10, hit 높이 20. bgTertiary 트랙·accent 채움·textPrimary thumb.
-/// 0..N-1 논리 인덱스, 드래그 중 반올림, 끝에서 정수 스냅. RTL에서도 왼쪽→오른쪽. 번역 완료 쪽은 아래 높이 2 마크.
+/// 0..N-1 논리 인덱스, 드래그 중 반올림, 끝에서 정수 스냅. RTL에서도 왼쪽→오른쪽.
+/// 번역 완료 표시는 썸네일 배지로만 한다. 트랙 아래에 accent 선을 그리면 읽은 위치 채움과 구분되지 않는다.
 /// RangeBase라서 UI Automation RangeValue를 제공한다. 키보드 Home/End/화살표.
 /// </summary>
 public sealed class PageTrack : RangeBase
 {
     private bool _dragging;
-    private IReadOnlySet<int> _marks = new HashSet<int>();
 
     public PageTrack()
     {
@@ -40,12 +40,6 @@ public sealed class PageTrack : RangeBase
     public event Action? DragCompleted;
 
     public bool IsDragging => _dragging;
-
-    public void SetMarks(IReadOnlySet<int> marks)
-    {
-        _marks = marks;
-        InvalidateVisual();
-    }
 
     protected override void OnValueChanged(double oldValue, double newValue)
     {
@@ -84,17 +78,6 @@ public sealed class PageTrack : RangeBase
         dc.DrawRoundedRectangle(track, null, new Rect(ThumbRadius, cy - 1, Math.Max(0, ActualWidth - ThumbRadius * 2), 2), 1, 1);
         var x = XFor(Value);
         dc.DrawRoundedRectangle(accent, null, new Rect(ThumbRadius, cy - 1, Math.Max(0, x - ThumbRadius), 2), 1, 1);
-        if (_marks.Count > 0 && Maximum >= 0)
-        {
-            var n = (int)Maximum + 1;
-            var segment = Math.Max(1, (ActualWidth - ThumbRadius * 2) / Math.Max(1, n));
-            foreach (var i in _marks)
-            {
-                if (i < 0 || i >= n) continue;
-                var mx = n == 1 ? ThumbRadius : XFor(i);
-                dc.DrawRectangle(accent, null, new Rect(mx - segment / 2, cy + 4, Math.Max(1, segment), 2));
-            }
-        }
         dc.DrawEllipse(thumb, null, new Point(x, cy), ThumbRadius, ThumbRadius);
     }
 
@@ -240,7 +223,7 @@ public sealed class PageSlider : Grid
         _rangeButton.ToolTip = Loc.T("Click to jump to a page") + (CommandRegistry.GestureText(CommandIds.PageJump) is { } g ? $" ({g})" : string.Empty);
     }
 
-    public void Update(int volumeIndex, int volumeCount, PageRange spread, int total, IReadOnlySet<int> translated)
+    public void Update(int volumeIndex, int volumeCount, PageRange spread, int total)
     {
         _total = total;
         _volumeText.Text = ReaderText.VolumePrefix(volumeIndex, volumeCount);
@@ -251,7 +234,6 @@ public sealed class PageSlider : Grid
             _track.Maximum = Math.Max(0, total - 1);
             _track.Value = Math.Clamp(spread.Start, 0, Math.Max(0, total - 1));
         }
-        _track.SetMarks(translated);
         AutomationProperties.SetName(_track, Loc.T("Page %lld", spread.Start + 1));
     }
 
