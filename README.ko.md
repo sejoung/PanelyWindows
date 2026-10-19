@@ -66,7 +66,7 @@
 장치 배분은 실측 결과입니다. 말풍선 탐지는 GPU에서 약 2.5배 빠르고, 글자 인식과 번역 모델은 CPU가 더 빠릅니다. `PANELY_ORT_DEVICE=cpu`로 GPU를 완전히 끌 수 있습니다.
 
 > [!NOTE]
-> 번역 품질은 작은 M2M100 모델의 한계가 있습니다. 짧은 대사와 관용 표현은 자주 틀립니다. 위 예시에서도 "midnight"가 "오후"로 번역됐습니다. 모델이 번역하지 못한 말풍선은 원문을 그대로 보여 주며, 말풍선 편집에서 어떤 말풍선이든 직접 고칠 수 있습니다.
+> 번역 품질은 작은 M2M100 모델의 한계가 있습니다. 짧은 대사와 관용 표현은 자주 틀리며, 위 예시에도 틀린 말풍선이 있습니다. 모델이 번역하지 못한 말풍선은 원문을 그대로 보여 주며, 말풍선 편집에서 어떤 말풍선이든 직접 고칠 수 있습니다.
 
 ## 시작하기
 
@@ -157,7 +157,10 @@ dotnet build Panely.sln
 dotnet test tests/Panely.Tests
 dotnet run --project src/Panely.App -- "D:\Comics\Series A"
 powershell -ExecutionPolicy Bypass -File tools\make-samples.ps1 -Out D:\PanelySamples   # QA 샘플 라이브러리
+powershell -ExecutionPolicy Bypass -File tools\readme-screenshots.ps1                   # docs\images 다시 만들기
 ```
+
+`readme-screenshots.ps1`은 합성 데모 만화(`tools\make-demo.ps1`)를 설치된 앱으로 열어, 실제 데이터와 분리된 데이터 폴더에서 영어·한국어 UI의 원본·번역 화면을 찍습니다. 먼저 앱을 설치하고 언어팩을 받아 두세요. 실행하는 동안(약 1분) Panely 창이 여러 번 열리고 닫힙니다.
 
 ### 데이터와 환경 변수
 

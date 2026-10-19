@@ -66,7 +66,7 @@ Panely can find speech balloons, read the text and draw a translation over the p
 The device split comes from measurements: detection is about 2.5× faster on the GPU, while the OCR and translation models are faster on the CPU. Set `PANELY_ORT_DEVICE=cpu` to turn off the GPU entirely.
 
 > [!NOTE]
-> Translation quality is limited by the small M2M100 model. Short lines and idioms are often wrong — in the example above, "midnight" became "afternoon". Balloons the model can't translate keep their original text, and you can correct any balloon in Edit Balloons.
+> Translation quality is limited by the small M2M100 model. Short lines and idioms are often wrong, as some balloons in the example above show. Balloons the model can't translate keep their original text, and you can correct any balloon in Edit Balloons.
 
 ## Getting started
 
@@ -157,7 +157,10 @@ dotnet build Panely.sln
 dotnet test tests/Panely.Tests
 dotnet run --project src/Panely.App -- "D:\Comics\Series A"
 powershell -ExecutionPolicy Bypass -File tools\make-samples.ps1 -Out D:\PanelySamples   # QA sample library
+powershell -ExecutionPolicy Bypass -File tools\readme-screenshots.ps1                   # regenerate docs\images
 ```
+
+`readme-screenshots.ps1` opens a synthetic demo comic (`tools\make-demo.ps1`) in the installed app with a separate data folder, and captures the English and Korean UI with and without translation. Install the app and download the language pack first; Panely windows open and close while it runs (about a minute).
 
 ### Data and environment variables
 
