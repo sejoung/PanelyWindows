@@ -82,16 +82,23 @@ public sealed class ModelTextRecognizer : ITextRecognizer, IRegionTextRecognizer
                 : (await PpOcr.RecognizeAsync(image, null, TranslationLanguages.Japanese, cancellationToken).ConfigureAwait(false)).Select(r => r.Rect).ToList();
             var expanded = boxes.Select(b => Expand(b, 0.05, image)).ToList();
             var crops = expanded.Select(b => image.Crop((int)b.X, (int)b.Y, (int)Math.Ceiling(b.Width), (int)Math.Ceiling(b.Height))).ToList();
-            var texts = await Manga.RecognizeAsync(crops, cancellationToken).ConfigureAwait(false);
+            // 탐지 상자는 여백이 넉넉하다. 상자 안의 실제 글자 줄로 글자 범위와 글자 크기(줄 두께)를 잰다.
+            // 글자 읽기(CPU)와 줄 탐지(GPU)는 서로 다른 장치라 함께 돌린다.
+            var textsTask = Task.Run(() => Manga.RecognizeAsync(crops, cancellationToken), cancellationToken);
+            var linesTask = Task.Run(async () =>
+            {
+                var all = new List<IReadOnlyList<RectD>>(expanded.Count);
+                foreach (var area in expanded) all.Add(await PpOcr.DetectLinesAsync(image, area, cancellationToken).ConfigureAwait(false));
+                return all;
+            }, cancellationToken);
+            await Task.WhenAll(textsTask, linesTask).ConfigureAwait(false);
+            var texts = await textsTask.ConfigureAwait(false);
+            var lines = await linesTask.ConfigureAwait(false);
             var result = new List<TextRegion>(boxes.Count);
             for (var i = 0; i < boxes.Count; i++)
             {
-                var text = texts[i];
-                if (string.IsNullOrWhiteSpace(text)) continue;
-                var box = boxes[i];
-                // 탐지 상자는 여백이 넉넉하다. 상자 안의 실제 글자 줄로 글자 범위와 글자 크기(줄 두께)를 잰다.
-                var lines = await PpOcr.DetectLinesAsync(image, expanded[i], cancellationToken).ConfigureAwait(false);
-                result.Add(Measure(text, box, lines));
+                if (string.IsNullOrWhiteSpace(texts[i])) continue;
+                result.Add(Measure(texts[i], boxes[i], lines[i]));
             }
             return result;
         }

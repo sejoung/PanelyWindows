@@ -74,13 +74,17 @@ public static class TilePlanner
         return result;
     }
 
-    /// <summary>같은 kind의 두 rect가 작은 면적 대비 교집합&gt;.5면 score 높은 것을 남긴다.</summary>
+    /// <summary>
+    /// 같은 종류의 두 rect가 작은 면적 대비 교집합&gt;.5면 score 높은 것을 남긴다.
+    /// 말풍선 안 글자와 밖 글자는 같은 종류(글자 상자)로 본다. 탐지기가 같은 상자를 두 class로 함께 내면
+    /// 둘 다 읽혀 원문이 두 번 이어 붙는다(예: "男の悦びを男の悦びを").
+    /// </summary>
     public static List<DetectedRegion> DedupeDetections(IEnumerable<DetectedRegion> regions)
     {
         var result = new List<DetectedRegion>();
         foreach (var r in regions.OrderByDescending(d => d.Score))
         {
-            if (result.Any(e => e.Kind == r.Kind && e.Rect.OverlapOfSmaller(r.Rect) > DuplicateOverlap)) continue;
+            if (result.Any(e => e.IsTextBox == r.IsTextBox && e.Rect.OverlapOfSmaller(r.Rect) > DuplicateOverlap)) continue;
             result.Add(r);
         }
         return result;

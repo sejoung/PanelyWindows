@@ -1,4 +1,7 @@
 using System.Diagnostics;
+using System.Globalization;
+using System.Runtime.ExceptionServices;
+using System.Threading.Channels;
 using Panely.Core.Abstractions;
 using Panely.Core.Localization;
 using Panely.Domain.Model;
@@ -114,7 +117,8 @@ public sealed class TranslationScheduler : IAsyncDisposable
                 job.Plan = null;
                 job.StripBubbles.Clear();
                 job.CompletedBands.Clear();
-                job.StripUnfinished.Clear();
+                job.StripEpoch++;
+                job.InFlight.Clear();
             }
             job.UserPaused = false;
             job.Attempted.Clear();
@@ -156,6 +160,8 @@ public sealed class TranslationScheduler : IAsyncDisposable
                 job.Plan = null;
                 job.StripBubbles.Clear();
                 job.CompletedBands.Clear();
+                job.StripEpoch++;
+                job.InFlight.Clear();
                 info = Snapshot(job);
             }
         }
@@ -427,39 +433,101 @@ public sealed class TranslationScheduler : IAsyncDisposable
         foreach (var p in TranslationOrder.Pages(count, job.FocusPage))
         {
             if (job.Only is not null && !job.Only.Contains(p)) continue;
-            if (job.Completed.Contains(p) || job.Attempted.Contains(p)) continue;
+            if (job.Completed.Contains(p) || job.Attempted.Contains(p) || job.InFlight.Contains(p)) continue;
             yield return p;
         }
     }
 
+    /// <summary>
+    /// 쪽 범위: 분석(탐지·OCR)이 쪽을 앞서 읽어 대기열에 넣고, 번역은 대기열에 쌓인 여러 쪽의 풍선을 묶어 처리한다.
+    /// 두 단계가 겹쳐 돌고 번역기에 한 번에 여러 문장이 들어가므로, 쪽마다 차례로 분석→번역하던 때보다 빠르다.
+    /// </summary>
     private async Task RunPagesAsync(Job job, OpenedBook book, string source, CancellationToken ct)
+    {
+        lock (_gate) job.InFlight.Clear();
+        var yielded = await RunPipelineAsync<PageWork>(
+            (writer, token) => AnalyzePagesAsync(job, book, source, writer, token),
+            (reader, token) => TranslateQueuedAsync(job, reader, source, w => w.Slots,
+                (works, pages) => { foreach (var w in works.Where(w => pages.Contains(w.Page))) PageUpdated?.Invoke(this, new TranslationPageUpdate(book.BookKey, job.Target, w.Page, BuildPage(w, false, null))); },
+                (w, elapsed, speech) => FinishPage(job, book, w, elapsed, speech), token),
+            ct).ConfigureAwait(false);
+        if (yielded)
+        {
+            Update(job, j => j.Phase = TranslationPhase.Queued);
+            return;
+        }
+        FinishJob(job, book.Pages.Count);
+    }
+
+    /// <returns>더 급한 작업에 자리를 내주려고 멈췄는지.</returns>
+    private async Task<bool> AnalyzePagesAsync(Job job, OpenedBook book, string source, ChannelWriter<PageWork> writer, CancellationToken ct)
     {
         while (true)
         {
             ct.ThrowIfCancellationRequested();
             int page;
+            bool forced;
             lock (_gate)
             {
                 var next = RemainingPages(job, book.Pages.Count).Cast<int?>().FirstOrDefault();
-                if (next is null) break;
+                if (next is null) return false;
                 page = next.Value;
+                job.InFlight.Add(page);
+                forced = job.ForceAll || job.Forced.Contains(page);
             }
-            var sw = Stopwatch.StartNew();
-            await TranslatePageAsync(job, book, page, source, ct).ConfigureAwait(false);
-            sw.Stop();
-            Update(job, j =>
+            var entry = book.Pages[page];
+            var key = CacheKey(entry.PageId, source, job.Target, TranslationScope.Page, job.Mode);
+            if (!forced && _cache.TryLoad(key) is { } cached)
             {
-                j.Attempted.Add(page);
-                j.Processed++;
-                j.ProcessingTime += sw.Elapsed;
-            });
-            if (ShouldYield(job))
-            {
-                Update(job, j => j.Phase = TranslationPhase.Queued);
-                return;
+                Update(job, j => { j.Completed.Add(page); j.Attempted.Add(page); j.InFlight.Remove(page); j.Processed++; });
+                PageUpdated?.Invoke(this, new TranslationPageUpdate(book.BookKey, job.Target, page, cached));
             }
+            else
+            {
+                var generation = _cache.Generation;
+                var pixels = await _pixels.GetPixelsAsync(book, entry, ct).ConfigureAwait(false);
+                var bubbles = await _analyzer.AnalyzeAsync(pixels, source, ct).ConfigureAwait(false);
+                var analyzed = new TranslatedPage
+                {
+                    PageId = entry.PageId,
+                    SourceLanguage = source,
+                    TargetLanguage = job.Target,
+                    Scope = TranslationScope.Page,
+                    Mode = job.Mode,
+                    ProviderRevision = key.ProviderRevision,
+                    AnalysisVersion = PageAnalyzer.AnalysisVersion,
+                    ImageWidth = pixels.Width,
+                    ImageHeight = pixels.Height,
+                    IsComplete = false,
+                    Bubbles = bubbles,
+                };
+                PageUpdated?.Invoke(this, new TranslationPageUpdate(book.BookKey, job.Target, page, analyzed));
+                await writer.WriteAsync(new PageWork(page, analyzed, key, generation, bubbles.Select(b => new Slot(page, -1, b)).ToList()), ct).ConfigureAwait(false);
+            }
+            if (ShouldYield(job)) return true;
         }
-        FinishJob(job, book.Pages.Count);
+    }
+
+    private TranslatedPage BuildPage(PageWork work, bool complete, bool? speechChecked)
+    {
+        lock (_gate)
+        {
+            return work.Analyzed with
+            {
+                Bubbles = work.Slots.Select(s => s.Bubble).ToList(),
+                IsComplete = complete && work.Slots.All(s => s.IsFinished),
+                SpeechLevelChecked = speechChecked,
+            };
+        }
+    }
+
+    private void FinishPage(Job job, OpenedBook book, PageWork work, TimeSpan elapsed, bool? speechChecked)
+    {
+        var page = BuildPage(work, true, speechChecked);
+        if (page.IsComplete && _cache.Store(work.Key, page, work.Generation))
+            Update(job, j => { j.Completed.Add(work.Page); j.Forced.Remove(work.Page); });
+        Update(job, j => { j.Attempted.Add(work.Page); j.InFlight.Remove(work.Page); j.Processed++; j.ProcessingTime += elapsed; });
+        PageUpdated?.Invoke(this, new TranslationPageUpdate(book.BookKey, job.Target, work.Page, page));
     }
 
     private void FinishJob(Job job, int pageCount)
@@ -486,117 +554,145 @@ public sealed class TranslationScheduler : IAsyncDisposable
     }
 
     /// <summary>
-    /// strip 작업을 다시 시작할 때: 끝나지 못한 쪽이 걸친 band를 완료 목록에서 빼고 그 쪽들의 풍선을 비운다.
-    /// 그대로 두면 band가 이미 끝난 것으로 보여 다시 읽지 않고 곧바로 같은 실패로 끝난다.
-    /// 빼낸 band가 걸친 다른 미완료 쪽도 자기 band가 모두 빠지므로 풍선이 중복되지 않는다.
+    /// 분석(produce)과 번역(consume)을 함께 돌린다. 대기열은 <see cref="TranslationOptions.AnalysisLookahead"/>개까지 쌓인다.
+    /// 한쪽이 실패하면 다른 쪽도 멈추고, 취소가 아닌 실제 오류를 알린다. 자리를 내줄 때는 이미 분석한 단위까지 번역을 마친다.
     /// </summary>
-    private static void ResetUnfinishedStrip(Job job)
+    /// <returns>produce가 자리를 내주려고 멈췄는지.</returns>
+    private async Task<bool> RunPipelineAsync<T>(Func<ChannelWriter<T>, CancellationToken, Task<bool>> produce, Func<ChannelReader<T>, CancellationToken, Task> consume, CancellationToken ct)
     {
-        if (job.Plan is not { } plan) return;
-        var unfinished = Enumerable.Range(0, plan.PageRects.Count).Where(p => !job.Completed.Contains(p)).ToHashSet();
-        foreach (var band in plan.Bands)
-            if (band.PageIndices.Any(unfinished.Contains)) job.CompletedBands.Remove(band.Index);
-        foreach (var p in unfinished) job.StripBubbles.Remove(p);
-        job.StripUnfinished.Clear();
-    }
+        var channel = Channel.CreateBounded<T>(new BoundedChannelOptions(Math.Max(1, _options.AnalysisLookahead)) { SingleReader = true, SingleWriter = true });
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var consumer = Task.Run(async () =>
+        {
+            try
+            {
+                await consume(channel.Reader, cts.Token).ConfigureAwait(false);
+            }
+            catch
+            {
+                await cts.CancelAsync().ConfigureAwait(false);
+                throw;
+            }
+        }, CancellationToken.None);
+        bool yielded;
+        try
+        {
+            yielded = await produce(channel.Writer, cts.Token).ConfigureAwait(false);
+        }
+        catch
+        {
+            await cts.CancelAsync().ConfigureAwait(false);
+            channel.Writer.TryComplete();
+            // 번역 쪽 오류로 분석이 취소된 것이면 그 오류를 알린다
+            if (await ObserveAsync(consumer).ConfigureAwait(false) is { } error and not OperationCanceledException)
+                ExceptionDispatchInfo.Throw(error);
+            throw;
+        }
+        channel.Writer.TryComplete();
+        await consumer.ConfigureAwait(false);
+        return yielded;
 
-    private async Task TranslatePageAsync(Job job, OpenedBook book, int pageIndex, string source, CancellationToken ct)
-    {
-        var entry = book.Pages[pageIndex];
-        var key = CacheKey(entry.PageId, source, job.Target, TranslationScope.Page, job.Mode);
-        if (!job.ForceAll && !job.Forced.Contains(pageIndex) && _cache.TryLoad(key) is { } cached)
+        static async Task<Exception?> ObserveAsync(Task task)
         {
-            Update(job, j => j.Completed.Add(pageIndex));
-            PageUpdated?.Invoke(this, new TranslationPageUpdate(book.BookKey, job.Target, pageIndex, cached));
-            return;
+            try
+            {
+                await task.ConfigureAwait(false);
+                return null;
+            }
+            catch (Exception ex)
+            {
+                return ex;
+            }
         }
-        var generation = _cache.Generation;
-        var pixels = await _pixels.GetPixelsAsync(book, entry, ct).ConfigureAwait(false);
-        var bubbles = await _analyzer.AnalyzeAsync(pixels, source, ct).ConfigureAwait(false);
-        var page = new TranslatedPage
-        {
-            PageId = entry.PageId,
-            SourceLanguage = source,
-            TargetLanguage = job.Target,
-            Scope = TranslationScope.Page,
-            Mode = job.Mode,
-            ProviderRevision = key.ProviderRevision,
-            AnalysisVersion = PageAnalyzer.AnalysisVersion,
-            ImageWidth = pixels.Width,
-            ImageHeight = pixels.Height,
-            IsComplete = false,
-            Bubbles = bubbles,
-        };
-        PageUpdated?.Invoke(this, new TranslationPageUpdate(book.BookKey, job.Target, pageIndex, page));
-        page = await TranslateBubblesAsync(job, book.BookKey, pageIndex, page, source, ct).ConfigureAwait(false);
-        if (page.IsComplete && _cache.Store(key, page, generation))
-        {
-            Update(job, j => { j.Completed.Add(pageIndex); j.Forced.Remove(pageIndex); });
-        }
-        PageUpdated?.Invoke(this, new TranslationPageUpdate(book.BookKey, job.Target, pageIndex, page));
     }
 
     /// <summary>
-    /// 풍선을 묶음 단위로 번역해 도착하는 대로 갱신한다. 결과는 ID로 맞춘다.
+    /// 대기열의 단위를 기다리지 않고 꺼낼 수 있는 만큼(기다리는 풍선이 <see cref="TranslationOptions.TranslateChunk"/>개가 찰 때까지) 모아
+    /// 한 번에 번역하고, 꺼낸 순서대로 마무리한다. 처리 시간은 마무리 간격으로 잰다(분석과 번역이 겹쳐 돌므로).
+    /// </summary>
+    private async Task TranslateQueuedAsync<T>(Job job, ChannelReader<T> reader, string source, Func<T, IReadOnlyList<Slot>> slotsOf,
+        Action<IReadOnlyList<T>, IReadOnlyCollection<int>> publish, Action<T, TimeSpan, bool?> finish, CancellationToken ct)
+    {
+        var chunk = Math.Max(1, _options.TranslateChunk);
+        var since = Stopwatch.StartNew();
+        while (await reader.WaitToReadAsync(ct).ConfigureAwait(false))
+        {
+            var units = new List<T>();
+            var waiting = 0;
+            while (waiting < chunk && reader.TryRead(out var unit))
+            {
+                units.Add(unit);
+                waiting += slotsOf(unit).Count(s => s.State == SlotState.Pending);
+            }
+            if (units.Count == 0) continue;
+            var speechChecked = await TranslateSlotsAsync(job, units.SelectMany(slotsOf).ToList(), source, pages => publish(units, pages), ct).ConfigureAwait(false);
+            var elapsed = since.Elapsed / units.Count;
+            since.Restart();
+            foreach (var u in units) finish(u, elapsed, speechChecked);
+        }
+    }
+
+    /// <summary>
+    /// 기다리는 풍선을 <see cref="TranslationOptions.TranslateChunk"/>개씩 묶어 번역해 slot에 반영하고, 묶음마다 바뀐 쪽을 게시한다.
+    /// 한 묶음에 여러 쪽·band의 풍선이 섞인다. 요청 ID는 묶음 안의 순번이라 쪽마다 겹치는 풍선 ID와 상관없다.
     /// 번역기가 오류 없이 빈 결과·원문 그대로를 낸 풍선(예: M2M100이 "かしこまりました"·"くっく" 같은 짧은 대사에서 바로 끝냄)은
     /// translation=null로 두고 끝난 것으로 본다. 화면에는 원문이 그대로 보이고 말풍선 편집에서 직접 번역을 넣을 수 있다.
     /// 그런 풍선 하나 때문에 쪽이 끝나지 않으면 책 전체가 "중지"로 끝나고 다시 해도 같은 곳에서 멈춘다.
-    /// 오류가 나거나 결과가 오지 않은 풍선이 있으면 IsComplete=false(다시 시도할 대상)다.
+    /// 오류가 나거나 결과가 오지 않은 풍선은 Failed(쪽이 끝나지 않음, 다시 시도할 대상)다.
     /// </summary>
-    private async Task<TranslatedPage> TranslateBubblesAsync(Job job, string bookKey, int pageIndex, TranslatedPage page, string source, CancellationToken ct)
+    /// <returns>존댓말 맞춤을 했으면 true, 하지 않았으면 null.</returns>
+    private async Task<bool?> TranslateSlotsAsync(Job job, IReadOnlyList<Slot> slots, string source, Action<IReadOnlyCollection<int>> publish, CancellationToken ct)
     {
-        var bubbles = page.Bubbles.ToList();
-        // 대기 목록을 먼저 고정한다. 루프 안에서 bubbles[index]를 바꾸므로 지연 열거하면 List 버전이 바뀌어 예외가 난다.
-        var pending = bubbles.Where(b => b.Translation is null).ToList();
-        var unresolved = 0;
-        var untranslatable = 0;
+        var pending = slots.Where(s => s.State == SlotState.Pending).ToList();
         foreach (var chunk in pending.Chunk(Math.Max(1, _options.TranslateChunk)))
         {
             ct.ThrowIfCancellationRequested();
-            var request = chunk.Select(b => new TranslationRequestItem(b.Id.ToString(System.Globalization.CultureInfo.InvariantCulture), b.Source)).ToList();
+            var request = chunk.Select((s, i) => new TranslationRequestItem(i.ToString(CultureInfo.InvariantCulture), s.Bubble.Source)).ToList();
             var results = await _providers.Translator.TranslateAsync(request, source, job.Target, job.Mode, ct).ConfigureAwait(false);
-            var answered = new HashSet<int>();
-            foreach (var r in results)
+            lock (_gate)
             {
-                if (!int.TryParse(r.Id, out var id)) continue;
-                var index = bubbles.FindIndex(b => b.Id == id);
-                if (index < 0) continue;
-                if (r.Error is { } error) { job.LastError = error; continue; }
-                answered.Add(id);
-                if (!IsValidTranslation(bubbles[index].Source, r.Text, job.Target)) { untranslatable++; continue; }
-                bubbles[index] = bubbles[index] with { Translation = r.Text!.Trim() };
+                foreach (var r in results)
+                {
+                    if (!int.TryParse(r.Id, NumberStyles.None, CultureInfo.InvariantCulture, out var i) || i >= chunk.Length || chunk[i].State != SlotState.Pending) continue;
+                    var slot = chunk[i];
+                    if (r.Error is { } error) { job.LastError = error; continue; }
+                    if (IsValidTranslation(slot.Bubble.Source, r.Text, job.Target))
+                    {
+                        slot.Bubble = slot.Bubble with { Translation = r.Text!.Trim() };
+                        slot.State = SlotState.Done;
+                    }
+                    else slot.State = SlotState.Untranslatable;
+                }
+                foreach (var slot in chunk.Where(s => s.State == SlotState.Pending)) slot.State = SlotState.Failed;
             }
-            unresolved += chunk.Count(b => !answered.Contains(b.Id));
-            if (!job.FirstResult)
-            {
-                job.FirstResult = true;
-                Update(job, j => j.Phase = TranslationPhase.Translating);
-            }
-            page = page with { Bubbles = bubbles.ToList() };
-            PageUpdated?.Invoke(this, new TranslationPageUpdate(bookKey, job.Target, pageIndex, page));
+            MarkFirstResult(job);
+            publish(chunk.Select(s => s.Page).ToHashSet());
         }
-        if (!job.FirstResult)
-        {
-            job.FirstResult = true;
-            Update(job, j => j.Phase = TranslationPhase.Translating);
-        }
+        MarkFirstResult(job);
 
         bool? speechChecked = null;
         if (_options.MatchSpeechLevel() && IsSpeechPair(source, job.Target) && _providers.SpeechLevel.GetCapability(source, job.Target).IsReady)
         {
-            for (var i = 0; i < bubbles.Count; i++)
+            foreach (var slot in pending.Where(s => s.State == SlotState.Done))
             {
-                if (bubbles[i].Translation is not { } tr) continue;
-                var corrected = await _providers.SpeechLevel.CorrectAsync(bubbles[i].Source, tr, source, job.Target, ct).ConfigureAwait(false);
-                if (corrected.Outcome == SpeechLevelOutcome.Candidate && IsValidTranslation(bubbles[i].Source, corrected.Text, job.Target))
-                    bubbles[i] = bubbles[i] with { Translation = corrected.Text };
+                var bubble = slot.Bubble;
+                var corrected = await _providers.SpeechLevel.CorrectAsync(bubble.Source, bubble.Translation!, source, job.Target, ct).ConfigureAwait(false);
+                if (corrected.Outcome == SpeechLevelOutcome.Candidate && IsValidTranslation(bubble.Source, corrected.Text, job.Target))
+                    lock (_gate) slot.Bubble = bubble with { Translation = corrected.Text };
             }
             speechChecked = true;
         }
         // 원문·번역 본문은 남기지 않고 개수만 기록한다
-        if (untranslatable > 0)
-            _diagnostics?.Log(LogLevel.Info, LogCategory.Translation, $"Page {pageIndex + 1}: translator returned no text for {untranslatable} balloon(s); left untranslated");
-        return page with { Bubbles = bubbles, IsComplete = unresolved == 0, SpeechLevelChecked = speechChecked };
+        foreach (var page in pending.Where(s => s.State == SlotState.Untranslatable).GroupBy(s => s.Page))
+            _diagnostics?.Log(LogLevel.Info, LogCategory.Translation, $"Page {page.Key + 1}: translator returned no text for {page.Count()} balloon(s); left untranslated");
+        return speechChecked;
+    }
+
+    private void MarkFirstResult(Job job)
+    {
+        if (job.FirstResult) return;
+        job.FirstResult = true;
+        Update(job, j => { if (j.Phase == TranslationPhase.Preparing) j.Phase = TranslationPhase.Translating; });
     }
 
     public static bool IsSpeechPair(string source, string target) =>
@@ -616,6 +712,9 @@ public sealed class TranslationScheduler : IAsyncDisposable
         {
             if (job.ResetUnfinished) ResetUnfinishedStrip(job);
             job.ResetUnfinished = false;
+            job.InFlight.Clear();
+            // 지난 실행이 번역을 마치기 전에 멈춘 band의 풍선은 버린다. 그 band는 다시 읽으므로 남겨 두면 풍선이 겹친다.
+            foreach (var list in job.StripBubbles.Values) list.RemoveAll(s => !job.CompletedBands.Contains(s.Band));
         }
 
         // 이미 완료된 쪽의 캐시를 게시
@@ -625,84 +724,119 @@ public sealed class TranslationScheduler : IAsyncDisposable
                 PageUpdated?.Invoke(this, new TranslationPageUpdate(book.BookKey, job.Target, p, c));
         }
 
-        while (true)
+        var yielded = await RunPipelineAsync<BandWork>(
+            (writer, token) => AnalyzeBandsAsync(job, book, plan, source, revision, writer, token),
+            (reader, token) => TranslateQueuedAsync(job, reader, source, w => w.Slots,
+                (_, pages) => { foreach (var p in pages) PublishStripPage(job, book, p, source, revision, complete: false); },
+                (w, elapsed, _) => FinishBand(job, book, plan, w, source, revision, elapsed), token),
+            ct).ConfigureAwait(false);
+        if (yielded)
         {
-            ct.ThrowIfCancellationRequested();
-            StripBand? band;
-            lock (_gate)
-            {
-                var focusBand = plan.Bands.FirstOrDefault(b => b.PageIndices.Contains(Math.Clamp(job.FocusPage, 0, Math.Max(0, book.Pages.Count - 1))))?.Index ?? 0;
-                band = plan.Bands.Skip(focusBand).Concat(plan.Bands.Take(focusBand))
-                    .FirstOrDefault(b => !job.CompletedBands.Contains(b.Index) && !job.AttemptedBands.Contains(b.Index)
-                        && b.PageIndices.Any(p => !job.Completed.Contains(p) && (job.Only is null || job.Only.Contains(p))));
-            }
-            if (band is null) break;
-            var sw = Stopwatch.StartNew();
-            var generation = _cache.Generation;
-            await TranslateBandAsync(job, book, plan, band, source, revision, generation, ct).ConfigureAwait(false);
-            sw.Stop();
-            Update(job, j => { j.AttemptedBands.Add(band.Index); j.Processed += Math.Max(1, band.PageIndices.Count); j.ProcessingTime += sw.Elapsed; });
-            if (ShouldYield(job))
-            {
-                Update(job, j => j.Phase = TranslationPhase.Queued);
-                return;
-            }
+            Update(job, j => j.Phase = TranslationPhase.Queued);
+            return;
         }
         FinishJob(job, book.Pages.Count);
     }
 
-    private async Task TranslateBandAsync(Job job, OpenedBook book, StripPlan plan, StripBand band, string source, string revision, int generation, CancellationToken ct)
+    /// <summary>band를 읽기 화면과 같은 maxWidth·수평 중앙·연속 y 공간으로 합성해 분석하고, 찾은 풍선을 쪽에 나눠 대기열에 넣는다.</summary>
+    /// <returns>더 급한 작업에 자리를 내주려고 멈췄는지.</returns>
+    private async Task<bool> AnalyzeBandsAsync(Job job, OpenedBook book, StripPlan plan, string source, string revision, ChannelWriter<BandWork> writer, CancellationToken ct)
     {
-        // 읽기 화면과 같은 maxWidth·수평 중앙·연속 y 공간으로 band를 합성한다
-        var canvas = PagePixels.Blank(plan.Width, band.Height);
-        foreach (var p in plan.PagesIntersecting(band))
+        while (true)
         {
-            var pixels = await GetPixelsCachedAsync(job, book, p, ct).ConfigureAwait(false);
-            var rect = plan.PageRects[p];
-            canvas.Blit(pixels, (int)Math.Round(rect.X), (int)Math.Round(rect.Y - band.Top));
-        }
-        var bubbles = await _analyzer.AnalyzeAsync(canvas, source, ct).ConfigureAwait(false);
-        var touched = new HashSet<int>();
-        foreach (var b in bubbles)
-        {
-            var centerY = band.Top + b.Rect.CenterY;
-            if (!band.Owns(centerY)) continue; // 중심 Y를 소유하는 band에서 한 번만 채택
-            var page = plan.PageAtY(centerY);
-            // 이미 끝난(캐시에 있는) 쪽은 다시 번역하지 않는다. 다시 넣으면 완성된 쪽 화면이 부분 결과로 덮인다.
-            if (job.Completed.Contains(page)) continue;
-            var origin = plan.PageRects[page];
-            var dx = -origin.X; var dy = band.Top - origin.Y;
-            var local = b with
+            ct.ThrowIfCancellationRequested();
+            StripBand? band;
+            int epoch;
+            lock (_gate)
             {
-                Rect = b.Rect.Offset(dx, dy),
-                BalloonRect = b.BalloonRect?.Offset(dx, dy),
-            };
-            if (!job.StripBubbles.TryGetValue(page, out var list)) job.StripBubbles[page] = list = [];
-            list.Add(local);
-            touched.Add(page);
+                var focusBand = plan.Bands.FirstOrDefault(b => b.PageIndices.Contains(Math.Clamp(job.FocusPage, 0, Math.Max(0, book.Pages.Count - 1))))?.Index ?? 0;
+                band = plan.Bands.Skip(focusBand).Concat(plan.Bands.Take(focusBand))
+                    .FirstOrDefault(b => !job.CompletedBands.Contains(b.Index) && !job.AttemptedBands.Contains(b.Index) && !job.InFlight.Contains(b.Index)
+                        && b.PageIndices.Any(p => !job.Completed.Contains(p) && (job.Only is null || job.Only.Contains(p))));
+                if (band is null) return false;
+                job.InFlight.Add(band.Index);
+                epoch = job.StripEpoch;
+            }
+            var generation = _cache.Generation;
+            var canvas = PagePixels.Blank(plan.Width, band.Height);
+            foreach (var p in plan.PagesIntersecting(band))
+            {
+                var pixels = await GetPixelsCachedAsync(job, book, p, ct).ConfigureAwait(false);
+                var rect = plan.PageRects[p];
+                canvas.Blit(pixels, (int)Math.Round(rect.X), (int)Math.Round(rect.Y - band.Top));
+            }
+            var bubbles = await _analyzer.AnalyzeAsync(canvas, source, ct).ConfigureAwait(false);
+            var slots = new List<Slot>();
+            var touched = new HashSet<int>();
+            lock (_gate)
+            {
+                // 읽는 동안 처음부터 다시 번역하라는 요청이 왔다: 이 결과는 버리고 다시 고른다
+                if (job.StripEpoch != epoch) { job.InFlight.Remove(band.Index); continue; }
+                foreach (var b in bubbles)
+                {
+                    var centerY = band.Top + b.Rect.CenterY;
+                    if (!band.Owns(centerY)) continue; // 중심 Y를 소유하는 band에서 한 번만 채택
+                    var page = plan.PageAtY(centerY);
+                    // 이미 끝난(캐시에 있는) 쪽은 다시 번역하지 않는다. 다시 넣으면 완성된 쪽 화면이 부분 결과로 덮인다.
+                    if (job.Completed.Contains(page)) continue;
+                    var origin = plan.PageRects[page];
+                    var dx = -origin.X; var dy = band.Top - origin.Y;
+                    if (!job.StripBubbles.TryGetValue(page, out var list)) job.StripBubbles[page] = list = [];
+                    // 번역 중에는 쪽 안에서 겹치지 않는 ID를 준다(band마다 0부터 매기므로). 완료 때 읽는 순서로 다시 매긴다.
+                    var local = b with
+                    {
+                        Id = list.Count == 0 ? 0 : list.Max(s => s.Bubble.Id) + 1,
+                        Rect = b.Rect.Offset(dx, dy),
+                        BalloonRect = b.BalloonRect?.Offset(dx, dy),
+                    };
+                    var slot = new Slot(page, band.Index, local);
+                    list.Add(slot);
+                    slots.Add(slot);
+                    touched.Add(page);
+                }
+            }
+            foreach (var p in touched) PublishStripPage(job, book, p, source, revision, complete: false);
+            await writer.WriteAsync(new BandWork(band, epoch, generation, slots), ct).ConfigureAwait(false);
+            if (ShouldYield(job)) return true;
         }
+    }
 
-        // 부분 결과 게시 후 band 풍선 번역
-        foreach (var p in touched) PublishStripPage(job, book, p, source, revision, complete: false);
-        foreach (var p in touched.Order())
+    private void FinishBand(Job job, OpenedBook book, StripPlan plan, BandWork work, string source, string revision, TimeSpan elapsed)
+    {
+        var stale = false;
+        List<int> finished = [];
+        Update(job, j =>
         {
-            var partial = BuildStripPage(job, book, p, source, revision, complete: false);
-            var translated = await TranslateBubblesAsync(job, book.BookKey, p, partial, source, ct).ConfigureAwait(false);
-            job.StripBubbles[p] = translated.Bubbles.ToList();
-            if (translated.IsComplete) job.StripUnfinished.Remove(p);
-            else job.StripUnfinished.Add(p);
-        }
-
-        Update(job, j => j.CompletedBands.Add(band.Index));
-        foreach (var p in plan.CompletedPages(job.CompletedBands))
+            if (j.StripEpoch != work.Epoch) { stale = true; return; }
+            j.InFlight.Remove(work.Band.Index);
+            j.AttemptedBands.Add(work.Band.Index);
+            j.CompletedBands.Add(work.Band.Index);
+            j.Processed += Math.Max(1, work.Band.PageIndices.Count);
+            j.ProcessingTime += elapsed;
+            finished = plan.CompletedPages(j.CompletedBands).Where(p => !j.Completed.Contains(p)).ToList();
+        });
+        if (stale) return;
+        foreach (var p in finished)
         {
-            if (job.Completed.Contains(p)) continue;
             var page = BuildStripPage(job, book, p, source, revision, complete: true);
             if (!page.IsComplete) { PageUpdated?.Invoke(this, new TranslationPageUpdate(book.BookKey, job.Target, p, page)); continue; }
             var key = CacheKey(book.Pages[p].PageId, source, job.Target, TranslationScope.Strip, job.Mode);
-            if (_cache.Store(key, page, generation)) Update(job, j => { j.Completed.Add(p); j.Forced.Remove(p); });
+            if (_cache.Store(key, page, work.Generation)) Update(job, j => { j.Completed.Add(p); j.Forced.Remove(p); });
             PageUpdated?.Invoke(this, new TranslationPageUpdate(book.BookKey, job.Target, p, page));
         }
+    }
+
+    /// <summary>
+    /// strip 작업을 다시 시작할 때: 끝나지 못한 쪽이 걸친 band를 완료 목록에서 뺀다. 그 band의 풍선은 호출한 쪽에서 버린다.
+    /// 그대로 두면 band가 이미 끝난 것으로 보여 다시 읽지 않고 곧바로 같은 실패로 끝난다.
+    /// 빼낸 band가 걸친 다른 미완료 쪽도 자기 band가 모두 빠지므로 풍선이 중복되지 않는다.
+    /// </summary>
+    private static void ResetUnfinishedStrip(Job job)
+    {
+        if (job.Plan is not { } plan) return;
+        var unfinished = Enumerable.Range(0, plan.PageRects.Count).Where(p => !job.Completed.Contains(p)).ToHashSet();
+        foreach (var band in plan.Bands)
+            if (band.PageIndices.Any(unfinished.Contains)) job.CompletedBands.Remove(band.Index);
     }
 
     private void PublishStripPage(Job job, OpenedBook book, int page, string source, string revision, bool complete)
@@ -711,11 +845,17 @@ public sealed class TranslationScheduler : IAsyncDisposable
     private TranslatedPage BuildStripPage(Job job, OpenedBook book, int page, string source, string revision, bool complete)
     {
         var rect = job.Plan!.PageRects[page];
-        var list = job.StripBubbles.TryGetValue(page, out var l) ? l : [];
-        // 페이지 로컬 ID 재부여(위→아래, 같은 높이면 오른쪽 먼저) — 번역 중에는 기존 ID 유지
-        var bubbles = complete
-            ? list.OrderBy(b => b.Rect.Top).ThenByDescending(b => b.Rect.CenterX).Select((b, i) => b with { Id = i }).ToList()
-            : list.ToList();
+        List<TranslatedBubble> bubbles;
+        bool finished;
+        lock (_gate)
+        {
+            var list = job.StripBubbles.TryGetValue(page, out var l) ? l : [];
+            // 페이지 로컬 ID 재부여(위→아래, 같은 높이면 오른쪽 먼저) — 번역 중에는 기존 ID 유지
+            bubbles = complete
+                ? list.Select(s => s.Bubble).OrderBy(b => b.Rect.Top).ThenByDescending(b => b.Rect.CenterX).Select((b, i) => b with { Id = i }).ToList()
+                : list.Select(s => s.Bubble).ToList();
+            finished = list.All(s => s.IsFinished);
+        }
         return new TranslatedPage
         {
             PageId = book.Pages[page].PageId,
@@ -727,7 +867,7 @@ public sealed class TranslationScheduler : IAsyncDisposable
             AnalysisVersion = PageAnalyzer.AnalysisVersion,
             ImageWidth = Math.Max(1, rect.Width),
             ImageHeight = Math.Max(1, rect.Height),
-            IsComplete = complete && !job.StripUnfinished.Contains(page),
+            IsComplete = complete && finished,
             Bubbles = bubbles,
         };
     }
@@ -926,11 +1066,14 @@ public sealed class TranslationScheduler : IAsyncDisposable
         public TimeSpan ProcessingTime { get; set; }
         public bool FirstResult { get; set; }
         public StripPlan? Plan { get; set; }
-        public Dictionary<int, List<TranslatedBubble>> StripBubbles { get; } = [];
+        /// <summary>strip: 쪽마다 찾은 풍선(어느 band에서 찾았는지와 번역 상태를 함께 둔다).</summary>
+        public Dictionary<int, List<Slot>> StripBubbles { get; } = [];
         public HashSet<int> CompletedBands { get; } = [];
         public HashSet<int> AttemptedBands { get; } = [];
-        /// <summary>strip: 번역기 오류로 아직 끝나지 않은 풍선이 있는 쪽.</summary>
-        public HashSet<int> StripUnfinished { get; } = [];
+        /// <summary>이번 실행에서 분석을 시작했지만 아직 번역을 마치지 못한 쪽(strip은 band). 멈췄다 다시 돌면 비운다.</summary>
+        public HashSet<int> InFlight { get; } = [];
+        /// <summary>strip 상태를 처음부터 다시 시작할 때마다 늘린다. 그 전에 읽기 시작한 band 결과는 버린다.</summary>
+        public int StripEpoch { get; set; }
         /// <summary>끝나거나 멈춘 작업을 다시 시작함: 다음 strip 실행 시작 때 끝나지 못한 쪽의 band를 다시 연다.</summary>
         public bool ResetUnfinished { get; set; }
         /// <summary>마지막 번역기 오류(끝나지 못한 쪽이 남을 때 안내에 쓴다).</summary>
@@ -938,4 +1081,24 @@ public sealed class TranslationScheduler : IAsyncDisposable
         public Dictionary<int, PagePixels> PixelCache { get; } = [];
         public Queue<int> PixelOrder { get; } = new();
     }
+
+    private enum SlotState { Pending, Done, Untranslatable, Failed }
+
+    /// <summary>번역할 풍선 하나. 분석이 만들고 번역이 결과를 제자리에 반영한다(_gate 안에서 바꾼다).</summary>
+    private sealed class Slot(int page, int band, TranslatedBubble bubble)
+    {
+        public int Page { get; } = page;
+        /// <summary>strip: 이 풍선을 찾은 band(쪽 범위는 -1).</summary>
+        public int Band { get; } = band;
+        public TranslatedBubble Bubble { get; set; } = bubble;
+        public SlotState State { get; set; } = bubble.Translation is null ? SlotState.Pending : SlotState.Done;
+        /// <summary>번역됐거나 번역할 수 없는 것으로 끝났다(오류·대기 중이 아니다).</summary>
+        public bool IsFinished => State is SlotState.Done or SlotState.Untranslatable;
+    }
+
+    /// <summary>쪽 범위: 분석이 끝나 번역을 기다리는 쪽.</summary>
+    private sealed record PageWork(int Page, TranslatedPage Analyzed, TranslationCacheKey Key, int Generation, List<Slot> Slots);
+
+    /// <summary>strip: 분석이 끝나 번역을 기다리는 band와 그 band에서 찾은 풍선.</summary>
+    private sealed record BandWork(StripBand Band, int Epoch, int Generation, List<Slot> Slots);
 }

@@ -58,10 +58,11 @@
 |---|---|---|---|
 | 말풍선 탐지 RT-DETR fp32 | 2.1초 | 5.4초 | GPU |
 | manga-ocr int8 | 3.8초 | 0.9초 | CPU |
-| PP-OCR mobile | 1.0~1.6초 | 0.6초 | CPU |
+| PP-OCR mobile 인식 | 1.0~1.6초 | 0.6초 | CPU |
+| PP-OCR 줄 탐지(일본어 글자 크기 측정, 세평유 93상자) | 139ms/상자 | 205ms/상자 | GPU |
 | M2M100 int8 번역 | 세션 생성 중 네이티브 충돌(0xC0000005) | 1.6초(KV 캐시·배치) | CPU |
 
-준비 후 한 쪽당 약 0.3초(탐지+OCR) + 0.5~0.8초(번역)입니다. `PANELY_ORT_DEVICE=cpu`로 GPU를 끌 수 있습니다. GPU는 DirectX 12 GPU면 제조사와 상관없이 DirectML로 쓰고, 실패하면 CPU로 돌아갑니다. 앱에 재배포용 `DirectML.dll` 1.15.4를 함께 넣습니다.
+분석(탐지+OCR)과 번역은 겹쳐 돌고, 번역기에는 여러 쪽의 풍선이 8개씩 묶여 들어갑니다([ADR 0003](adr/0003-translation-pipeline.md)). 세평유 60쪽은 strip 범위 22.2초, 쪽 범위 29.1초입니다. `PANELY_ORT_DEVICE=cpu`로 GPU를 끌 수 있습니다. GPU는 DirectX 12 GPU면 제조사와 상관없이 DirectML로 쓰고, 실패하면 CPU로 돌아갑니다. 앱에 재배포용 `DirectML.dll` 1.15.4를 함께 넣습니다.
 
 ## 알려진 차이·개선 후보
 

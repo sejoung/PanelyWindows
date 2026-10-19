@@ -2,7 +2,7 @@
 
 - 상태: 채택
 - 날짜: 2026-10-19
-- 관련 코드: `TranslationScheduler.TranslateBubblesAsync`, `ResetUnfinishedStrip`, `TranslationCache.Store`, `EditResolver.Resolve(pageComplete)`, `BubbleTextState.Untranslated`
+- 관련 코드: `TranslationScheduler.TranslateSlotsAsync`(ADR 0003 전에는 `TranslateBubblesAsync`), `ResetUnfinishedStrip`, `TranslationCache.Store`, `EditResolver.Resolve(pageComplete)`, `BubbleTextState.Untranslated`
 - 테스트: `tests/Panely.Tests/Translation/UntranslatableBubbleTests.cs`
 
 ## 배경

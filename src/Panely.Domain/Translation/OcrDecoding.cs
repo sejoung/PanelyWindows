@@ -158,8 +158,10 @@ public static class DbPostProcess
         }
     }
 
+    public const int DefaultLimitSide = 960;
+
     /// <summary>DB 입력 크기: 짧은 변이 limit보다 작으면 키우고, 32의 배수로 맞춘다(PP-OCR limit_type=min).</summary>
-    public static (int Width, int Height) InputSize(int width, int height, int limitSideLength = 960, int maxSide = 2400)
+    public static (int Width, int Height) InputSize(int width, int height, int limitSideLength = DefaultLimitSide, int maxSide = 2400)
     {
         var ratio = Math.Min(width, height) < limitSideLength ? limitSideLength / (double)Math.Min(width, height) : 1.0;
         // 아주 긴 웹툰 조각에서 입력이 지나치게 커지지 않게 긴 변을 제한한다

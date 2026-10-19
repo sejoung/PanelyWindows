@@ -59,11 +59,11 @@
 |---|---|---|---|
 | 말풍선 탐지 | [comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) (RT-DETR) | 약 170MB | GPU(DirectML), 안 되면 CPU |
 | 일본어 글자 인식 | [manga-ocr](https://huggingface.co/ogkalu/manga-ocr-onnx) (int8) | 약 117MB | CPU |
-| 중국어·영어·한국어 글자 인식, 언어 감지 | [PP-OCRv5 mobile](https://huggingface.co/ogkalu/ppocr-v5-onnx) | 약 43MB | CPU |
+| 중국어·영어·한국어 글자 인식, 언어 감지, 글자 줄 찾기 | [PP-OCRv5 mobile](https://huggingface.co/ogkalu/ppocr-v5-onnx) | 약 43MB | 줄 찾기는 GPU, 읽기는 CPU |
 | 번역 — 빠름 | [M2M100-418M](https://huggingface.co/Xenova/m2m100_418M) (int8) | 약 640MB | CPU |
 | 번역 — 정확 | M2M100-418M (fp32) | 약 2.5GB | CPU |
 
-장치 배분은 실측 결과입니다. 말풍선 탐지는 GPU에서 약 2.5배 빠르고, 글자 인식과 번역 모델은 CPU가 더 빠릅니다. `PANELY_ORT_DEVICE=cpu`로 GPU를 완전히 끌 수 있습니다.
+장치 배분은 실측 결과입니다. 말풍선 탐지와 글자 줄 찾기는 GPU가 빠르고, 글자 읽기와 번역 모델은 CPU가 더 빠릅니다. 글자 읽기와 번역은 함께 돌고, 번역기에는 여러 쪽의 말풍선이 한꺼번에 들어갑니다. `PANELY_ORT_DEVICE=cpu`로 GPU를 완전히 끌 수 있습니다.
 
 > [!NOTE]
 > 번역 품질은 작은 M2M100 모델의 한계가 있습니다. 짧은 대사와 관용 표현은 자주 틀리며, 위 예시에도 틀린 말풍선이 있습니다. 모델이 번역하지 못한 말풍선은 원문을 그대로 보여 주며, 말풍선 편집에서 어떤 말풍선이든 직접 고칠 수 있습니다.

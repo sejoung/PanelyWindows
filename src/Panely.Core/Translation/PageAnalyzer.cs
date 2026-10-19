@@ -15,8 +15,9 @@ public sealed class PageAnalyzer
     /// 3: 다른 언어를 억지로 읽은 뒤섞인 OCR 결과를 풍선에서 제외.
     /// 4: 만화 OCR(manga-ocr/PP-OCRv5)로 탐지 글자 상자 단위 인식.
     /// 5: 탐지된 말풍선 안의 배경 flat 판정 완화(이전 캐시는 다시 분석).
+    /// 6: 같은 자리의 말풍선 안·밖 글자 상자 중복 제거(원문이 두 번 이어 붙던 문제).
     /// </summary>
-    public const int AnalysisVersion = 5;
+    public const int AnalysisVersion = 6;
     private const int MaxConcurrentRereads = 2;
 
     private readonly ITextRecognizer _recognizer;

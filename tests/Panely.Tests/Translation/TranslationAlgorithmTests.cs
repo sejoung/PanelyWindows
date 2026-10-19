@@ -127,6 +127,19 @@ public class TilePlannerTests
     }
 
     [Fact]
+    public void DetectionDedupTreatsBothTextKindsAsOneKind()
+    {
+        // 실측: 탐지기가 같은 글자 상자를 말풍선 안(.70)·밖(.50) 글자로 함께 내 원문이 두 번 읽혔다
+        var inBalloon = new DetectedRegion(new RectD(275, 401, 174, 301), DetectionKind.TextInBalloon, 0.70);
+        var free = new DetectedRegion(new RectD(275, 401, 174, 301), DetectionKind.FreeText, 0.50);
+        var balloon = new DetectedRegion(new RectD(270, 396, 184, 311), DetectionKind.Balloon, 0.80);
+        var result = TilePlanner.DedupeDetections([free, balloon, inBalloon]);
+        Assert.Equal(2, result.Count);
+        Assert.Contains(inBalloon, result);
+        Assert.Contains(balloon, result);
+    }
+
+    [Fact]
     public void DetectorDecodeMultiClassAndThreshold()
     {
         float[] scores = [0.5f, 0.45f, 0.1f, 0.39f, 0.2f, 0.9f];

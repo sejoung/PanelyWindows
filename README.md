@@ -59,11 +59,11 @@ Panely can find speech balloons, read the text and draw a translation over the p
 |---|---|---|---|
 | Balloon detection | [comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) (RT-DETR) | ~170 MB | GPU (DirectML), CPU fallback |
 | Japanese text | [manga-ocr](https://huggingface.co/ogkalu/manga-ocr-onnx) (int8) | ~117 MB | CPU |
-| Chinese / English / Korean text, language detection | [PP-OCRv5 mobile](https://huggingface.co/ogkalu/ppocr-v5-onnx) | ~43 MB | CPU |
+| Chinese / English / Korean text, language detection, line finding | [PP-OCRv5 mobile](https://huggingface.co/ogkalu/ppocr-v5-onnx) | ~43 MB | Line finding on GPU, reading on CPU |
 | Translation — Fast | [M2M100-418M](https://huggingface.co/Xenova/m2m100_418M) (int8) | ~640 MB | CPU |
 | Translation — Accurate | M2M100-418M (fp32) | ~2.5 GB | CPU |
 
-The device split comes from measurements: detection is about 2.5× faster on the GPU, while the OCR and translation models are faster on the CPU. Set `PANELY_ORT_DEVICE=cpu` to turn off the GPU entirely.
+The device split comes from measurements: balloon detection and text-line finding are faster on the GPU, while the text-reading and translation models are faster on the CPU. Reading and translation run at the same time, and balloons from several pages go to the translator together. Set `PANELY_ORT_DEVICE=cpu` to turn off the GPU entirely.
 
 > [!NOTE]
 > Translation quality is limited by the small M2M100 model. Short lines and idioms are often wrong, as some balloons in the example above show. Balloons the model can't translate keep their original text, and you can correct any balloon in Edit Balloons.

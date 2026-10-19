@@ -216,13 +216,17 @@ public sealed class PpOcrEngine : IDisposable
     }
 
     /// <summary>area 안의 글자 줄 사각형만 찾는다(manga-ocr 상자의 실제 글자 범위·글자 크기 측정용).</summary>
-    public async Task<IReadOnlyList<RectD>> DetectLinesAsync(PagePixels image, RectD area, CancellationToken cancellationToken)
+    public Task<IReadOnlyList<RectD>> DetectLinesAsync(PagePixels image, RectD area, CancellationToken cancellationToken)
+        => DetectLinesAsync(image, area, DbPostProcess.DefaultLimitSide, cancellationToken);
+
+    /// <summary>limitSideLength: DB 입력의 짧은 변 목표(작을수록 빠르고 작은 글자를 놓치기 쉽다).</summary>
+    public async Task<IReadOnlyList<RectD>> DetectLinesAsync(PagePixels image, RectD area, int limitSideLength, CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             EnsureSessions();
-            return DetectLines(image, area);
+            return DetectLines(image, area, limitSideLength);
         }
         finally
         {
@@ -233,7 +237,7 @@ public sealed class PpOcrEngine : IDisposable
     private static bool IsVerticalLine(RectD r, string language)
         => r.Height > r.Width * 1.5 && language is TranslationLanguages.Japanese or TranslationLanguages.ChineseSimplified or TranslationLanguages.ChineseTraditional;
 
-    private List<RectD> DetectLines(PagePixels image, RectD? area)
+    private List<RectD> DetectLines(PagePixels image, RectD? area, int limitSideLength = DbPostProcess.DefaultLimitSide)
     {
         var a = area ?? new RectD(0, 0, image.Width, image.Height);
         var x0 = (int)Math.Floor(Math.Max(0, a.X));
@@ -242,7 +246,7 @@ public sealed class PpOcrEngine : IDisposable
         var h = (int)Math.Ceiling(Math.Min(image.Height, a.Bottom)) - y0;
         if (w < 4 || h < 4) return [];
         var crop = area is null ? image : image.Crop(x0, y0, w, h);
-        var (iw, ih) = DbPostProcess.InputSize(crop.Width, crop.Height);
+        var (iw, ih) = DbPostProcess.InputSize(crop.Width, crop.Height, limitSideLength);
         var resized = crop.Resize(iw, ih);
         var input = new DenseTensor<float>([1, 3, ih, iw]);
         for (var y = 0; y < ih; y++)
@@ -344,7 +348,7 @@ public sealed class PpOcrEngine : IDisposable
         if (_detector is not null && _revision == m.Revision) return;
         var detPath = _store.FilePath(m.Id, "ch_PP-OCRv5_mobile_det.onnx") ?? throw new InvalidOperationException("PP-OCR not installed");
         DisposeSessions();
-        (_detector, var device) = OnnxSessions.Create(detPath, OcrRuntimePolicy.PpOcrPrefersGpu);
+        (_detector, var device) = OnnxSessions.Create(detPath, OcrRuntimePolicy.PpOcrDetectorPrefersGpu);
         Device = device;
         _revision = m.Revision;
     }
@@ -381,10 +385,13 @@ public sealed class PpOcrEngine : IDisposable
 /// <summary>
 /// 모델별 GPU 사용 여부. 실측(이 PC, DirectML, 웹툰 12쪽/말풍선 12개, 세션 생성 포함):
 /// 말풍선 탐지 RT-DETR fp32 GPU 2.1초 vs CPU 5.4초 → GPU. manga-ocr int8 GPU 3.8초 vs CPU 0.9초 → CPU.
-/// PP-OCR mobile(작은 모델, 줄마다 입력 폭이 달라 GPU 그래프 재구성 비용) GPU 1.0~1.6초 vs CPU 0.6초 → CPU.
+/// PP-OCR mobile 인식(작은 모델, 줄마다 입력 폭이 달라 GPU 그래프 재구성 비용) GPU 1.0~1.6초 vs CPU 0.6초 → CPU.
+/// PP-OCR 줄 탐지(일본어 글자 크기 측정에서 상자마다 짧은 변 960으로 키워 돌림, 세평유 120쪽 93상자 정상 상태)
+/// GPU 139ms vs CPU 205ms/상자 → GPU. 입력을 줄이면 빨라지지만(640: 71ms) 글자 크기·세로쓰기 판정이 13~20상자에서 달라져 그대로 둔다.
 /// </summary>
 public static class OcrRuntimePolicy
 {
     public static bool MangaOcrPrefersGpu { get; set; }
     public static bool PpOcrPrefersGpu { get; set; }
+    public static bool PpOcrDetectorPrefersGpu { get; set; } = true;
 }
