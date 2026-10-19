@@ -24,8 +24,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\..\docs\windows\test-vectors.json" Link="Vectors\test-vectors.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\docs\windows\examples\**\*" Link="Vectors\examples\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <!-- 계산 기대값(test-vectors), 저장 형식 스키마와 예제, 탐지 통합 테스트 이미지 -->
+    <None Update="Vectors\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

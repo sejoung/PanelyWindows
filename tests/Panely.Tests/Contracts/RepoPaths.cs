@@ -1,6 +1,6 @@
 namespace Panely.Tests.Contracts;
 
-/// <summary>저장소 루트(Panely.sln이 있는 폴더)와 명세 폴더 위치.</summary>
+/// <summary>저장소 루트(Panely.sln이 있는 폴더)와 테스트 데이터 폴더 위치.</summary>
 internal static class RepoPaths
 {
     private static readonly Lazy<string> RootLazy = new(() =>
@@ -11,7 +11,8 @@ internal static class RepoPaths
     });
 
     public static string Root => RootLazy.Value;
-    public static string Spec => Path.Combine(Root, "docs", "windows");
+    /// <summary>저장 형식 스키마(domain.schema.json)·예제·계산 기대값이 있는 폴더.</summary>
+    public static string Vectors => Path.Combine(Root, "tests", "Panely.Tests", "Vectors");
     public static string Src => Path.Combine(Root, "src");
     public static string Strings => Path.Combine(Src, "Panely.Core", "Localization", "Strings");
 

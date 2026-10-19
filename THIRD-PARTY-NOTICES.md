@@ -28,7 +28,7 @@ OCR 구성(언어별 모델 선택, manga-ocr 디코딩, PP-OCR 전처리·CTC �
 
 ## 원본 Panely 자산
 
-앱 아이콘(`docs/windows/assets/panely-icon-stacked.svg`에서 생성), 문구 카탈로그, 화면 디자인은 원본 Panely 저장소의 자산이며 Apache-2.0을 따릅니다. 전문은 `docs/windows/assets/LICENSE-original.txt` (Copyright 2026 beni kim).
+앱 아이콘(`assets/panely-icon-stacked.svg`에서 생성), 문구 카탈로그(`src/Panely.Core/Localization/localization.catalog.json`), 화면 디자인은 원본 Panely 저장소의 자산이며 Apache-2.0을 따릅니다. 전문은 `assets/LICENSE-original.txt` (Copyright 2026 beni kim).
 
 ## 테스트 전용
 
@@ -36,3 +36,4 @@ OCR 구성(언어별 모델 선택, manga-ocr 디코딩, PP-OCR 전처리·CTC �
 |---|---|---|
 | xUnit, Microsoft.NET.Test.Sdk, coverlet | Apache-2.0 / MIT | 테스트 실행 |
 | `tests/Panely.Tests/Core/Fixtures/rar/*.rar` | MIT (SharpCompress) | SharpCompress 테스트 저장소의 샘플 RAR. 같은 폴더의 `LICENSE-SharpCompress.txt` 참고. 앱에는 포함되지 않음 |
+| `tests/Panely.Tests/Vectors/translation-before-after.png` | Apache-2.0 (원본 Panely) | 원본 macOS 앱의 번역 화면 스크린샷. 말풍선 탐지 통합 테스트 입력. 앱에는 포함되지 않음 |

@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Panely.Tests.Domain;
 
-/// <summary>docs/windows/test-vectors.json 로더.</summary>
+/// <summary>Vectors/test-vectors.json(계산 기대값) 로더.</summary>
 internal static class Vectors
 {
     private static readonly Lazy<JsonDocument> Doc = new(() =>

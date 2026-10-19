@@ -25,7 +25,7 @@ $dotnet = Get-Dotnet
 if ($LASTEXITCODE -ne 0) { throw "publish failed ($LASTEXITCODE)" }
 
 # 라이선스·고지 동봉
-Copy-Item (Join-Path $repo 'docs\windows\assets\LICENSE-original.txt') (Join-Path $Output 'LICENSE-original-assets.txt') -Force
+Copy-Item (Join-Path $repo 'assets\LICENSE-original.txt') (Join-Path $Output 'LICENSE-original-assets.txt') -Force
 if (Test-Path (Join-Path $repo 'THIRD-PARTY-NOTICES.md')) {
     Copy-Item (Join-Path $repo 'THIRD-PARTY-NOTICES.md') $Output -Force
 }

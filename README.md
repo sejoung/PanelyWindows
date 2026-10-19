@@ -1,7 +1,7 @@
 # Panely for Windows
 
 로컬 만화·이미지를 읽는 Windows 리더입니다. 폴더·CBZ/ZIP·CBR/RAR을 열고 한 장/두 장/세로 스크롤, 오른쪽→왼쪽 읽기, 라이브러리, 이어보기, 북마크를 제공합니다. 실험 기능으로 기기 안에서 말풍선을 번역해 보여주고 번역본을 내보냅니다.
-명세는 [`docs/windows/`](docs/windows/README.md), 기능별 구현·검수 현황은 [`docs/IMPLEMENTATION-STATUS.md`](docs/IMPLEMENTATION-STATUS.md), 명세에 없던 설계 결정은 [`docs/adr/`](docs/adr/)에 있습니다.
+기능별 구현·검수 현황은 [`docs/IMPLEMENTATION-STATUS.md`](docs/IMPLEMENTATION-STATUS.md), 설계 결정은 [`docs/adr/`](docs/adr/)에 있습니다.
 
 ## 구성
 
@@ -10,7 +10,7 @@
 | `src/Panely.Domain` | 순수 계산: 펼침·맞춤·줌·휠 상태 머신·자연 정렬·OCR 타일·말풍선 묶기·패치 배치·AI 응답 파서 |
 | `src/Panely.Core` | 파일/ZIP/RAR·추출 캐시·상태 저장(state.json)·진단 로그·라이브러리 감시·리더 세션·번역/내보내기 작업 큐·모델 관리·Windows OCR·ONNX 어댑터·한영 문구 |
 | `src/Panely.App` | WPF UI: 리더 창, 툴바, 라이브러리, 뷰어, 썸네일, 설정, 작업 창, 번역 패널·편집·내보내기·AI 채팅 시트 |
-| `tests/Panely.Tests` | xUnit. `docs/windows/test-vectors.json` 기대값 포함 |
+| `tests/Panely.Tests` | xUnit. `Vectors/`에 계산 기대값·저장 형식 스키마·예제 |
 | `tools/` | `make-samples.ps1`(QA 샘플 생성), `publish.ps1`(배포본), `IconBuilder`(아이콘 생성) |
 
 ## 빌드·실행
@@ -120,7 +120,7 @@ powershell -ExecutionPolicy Bypass -File tools\make-samples.ps1 -Out D:\PanelySa
 | 원본↔번역 / 번역 실행 / 말풍선 편집 / 작업 창 | Ctrl+Shift+T / Ctrl+Alt+Y / Ctrl+Shift+E / Ctrl+Alt+J |
 | 전체 화면 | F11 |
 
-전체 목록은 [`docs/windows/08-commands-and-copy.md`](docs/windows/08-commands-and-copy.md)에 있습니다.
+전체 목록은 앱의 각 메뉴와 [`CommandRegistry.cs`](src/Panely.Core/Commands/CommandRegistry.cs)에 있습니다.
 
 ## 라이선스
 

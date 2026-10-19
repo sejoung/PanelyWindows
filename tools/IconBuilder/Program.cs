@@ -1,4 +1,4 @@
-// docs/windows/assets/panely-icon-stacked.svg 를 WPF 도형으로 옮겨 16..256 PNG와 .ico를 만든다.
+// assets/panely-icon-stacked.svg 를 WPF 도형으로 옮겨 16..256 PNG와 .ico를 만든다.
 // 사용: dotnet run --project tools/IconBuilder -- <출력 폴더>
 using System.IO;
 using System.Windows;

@@ -66,7 +66,7 @@ $publishArgs = @(
 )
 Invoke-Dotnet $dotnet $publishArgs
 Copy-Item (Join-Path $RepoRoot 'THIRD-PARTY-NOTICES.md') $staging -Force
-Copy-Item (Join-Path $RepoRoot 'docs\windows\assets\LICENSE-original.txt') (Join-Path $staging 'LICENSE-original-assets.txt') -Force
+Copy-Item (Join-Path $RepoRoot 'assets\LICENSE-original.txt') (Join-Path $staging 'LICENSE-original-assets.txt') -Force
 Write-Ok "게시됨: $staging"
 
 # 3) 실행 중인 설치본 종료 후 교체

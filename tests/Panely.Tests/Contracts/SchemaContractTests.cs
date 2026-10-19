@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Json.Schema;
@@ -13,8 +11,8 @@ using Panely.Domain.Translation;
 namespace Panely.Tests.Contracts;
 
 /// <summary>
-/// 저장 형식 계약(05-data.md, domain.schema.json)과 명세 패키지 무결성(09 문서 "독립 패키지 검수").
-/// 앱이 실제로 쓰는 state.json·번역 캐시·수정 파일이 스키마를 통과해야 한다.
+/// 저장 형식 계약(Vectors/domain.schema.json). 앱이 실제로 쓰는 state.json·번역 캐시·수정 파일이 스키마를 통과해야 한다.
+/// 형식을 바꾸면 기존 사용자 데이터를 읽을 수 있는지 함께 확인하고 스키마를 갱신한다.
 /// </summary>
 public class SchemaContractTests
 {
@@ -23,7 +21,7 @@ public class SchemaContractTests
     /// <summary>domain.schema.json의 루트($ref State) 또는 지정한 $defs 항목으로 검증하는 스키마.</summary>
     private static JsonSchema SchemaFor(string? definition)
     {
-        var root = JsonNode.Parse(File.ReadAllText(Path.Combine(RepoPaths.Spec, "domain.schema.json")))!.AsObject();
+        var root = JsonNode.Parse(File.ReadAllText(Path.Combine(RepoPaths.Vectors, "domain.schema.json")))!.AsObject();
         var id = $"urn:panely:test:{definition ?? "State"}:{Guid.NewGuid():N}";
         root["$id"] = id;
         if (definition is not null) root["$ref"] = $"#/$defs/{definition}";
@@ -44,9 +42,9 @@ public class SchemaContractTests
     }
 
     [Fact]
-    public void Spec_examples_validate()
+    public void Examples_validate()
     {
-        var examples = Path.Combine(RepoPaths.Spec, "examples");
+        var examples = Path.Combine(RepoPaths.Vectors, "examples");
         AssertValid(SchemaFor(null), File.ReadAllText(Path.Combine(examples, "state.json")), "examples/state.json");
         AssertValid(SchemaFor("TranslatedPage"), File.ReadAllText(Path.Combine(examples, "translation-page.json")), "examples/translation-page.json");
         AssertValid(SchemaFor("PageEdits"), File.ReadAllText(Path.Combine(examples, "page-edits.json")), "examples/page-edits.json");
@@ -145,30 +143,4 @@ public class SchemaContractTests
         };
         AssertValid(SchemaFor("PageEdits"), TranslationJson.Serialize(edits), "말풍선 수정 JSON");
     }
-
-    /// <summary>bundle-manifest.json의 크기·SHA-256(텍스트는 줄바꿈을 LF로 맞춰 비교: git autocrlf 체크아웃 대비).</summary>
-    [Fact]
-    public void Spec_bundle_matches_manifest()
-    {
-        using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(RepoPaths.Spec, "bundle-manifest.json")));
-        var problems = new List<string>();
-        var count = 0;
-        foreach (var file in doc.RootElement.GetProperty("files").EnumerateArray())
-        {
-            count++;
-            var rel = file.GetProperty("path").GetString()!;
-            var path = Path.Combine(RepoPaths.Spec, rel.Replace('/', Path.DirectorySeparatorChar));
-            if (!File.Exists(path)) { problems.Add($"없음: {rel}"); continue; }
-            var expected = file.GetProperty("sha256").GetString()!;
-            var bytes = File.ReadAllBytes(path);
-            if (Sha(bytes) == expected) continue;
-            var normalized = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(bytes).Replace("\r\n", "\n"));
-            if (Sha(normalized) == expected) continue;
-            problems.Add($"해시 불일치: {rel}");
-        }
-        Assert.True(count >= 40, $"manifest 파일 수가 너무 적습니다: {count}");
-        Assert.True(problems.Count == 0, string.Join('\n', problems));
-    }
-
-    private static string Sha(byte[] data) => Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant();
 }

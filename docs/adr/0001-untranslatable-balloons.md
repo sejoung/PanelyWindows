@@ -20,7 +20,7 @@
 |---|---|
 | 첫 토큰에서 `</s>`를 막기(HF `min_new_tokens=1`) | 빈칸은 없어지지만 `かしこまりました` → "엉덩이 났다.", `ぁぁーー` → "ᄏᄏᄏᄏᄏᄏ"처럼 틀린 번역이 나온다. 구두점(`。`, `!`)을 붙여도 같았다. **기각** |
 | 빈 결과 풍선을 쪽에서 지우기 | 쪽은 끝나지만 사용자가 그 풍선을 볼 수도 고칠 수도 없다. **기각** |
-| 빈 결과 풍선을 `translation=null`로 두고 쪽을 완료로 보기 | 원문이 그대로 보이고, 풍선을 눌러 이유를 확인하고 직접 번역을 넣을 수 있다. `domain.schema.json`이 `translation`을 nullable로, `isComplete`를 따로 두므로 스키마 변경이 없다. **채택** |
+| 빈 결과 풍선을 `translation=null`로 두고 쪽을 완료로 보기 | 원문이 그대로 보이고, 풍선을 눌러 이유를 확인하고 직접 번역을 넣을 수 있다. 저장 형식 스키마(`tests/Panely.Tests/Vectors/domain.schema.json`)가 `translation`을 nullable로, `isComplete`를 따로 두므로 스키마 변경이 없다. **채택** |
 
 ## 결정
 

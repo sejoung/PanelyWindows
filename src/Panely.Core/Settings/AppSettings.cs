@@ -2,7 +2,7 @@ using Panely.Domain.Model;
 
 namespace Panely.Core.Settings;
 
-/// <summary>영속 전역 설정. 기본값은 design-tokens.json defaults와 같다.</summary>
+/// <summary>영속 전역 설정. 기본값은 원본 Panely 설정 기본값과 같다.</summary>
 public sealed class AppSettings
 {
     public ReadingLayout Layout { get; set; } = ReadingLayout.Single;
