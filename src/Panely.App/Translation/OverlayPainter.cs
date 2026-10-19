@@ -9,7 +9,8 @@ namespace Panely.App.Translation;
 /// <summary>
 /// 번역 patch painter(06 번역 패치 렌더링). 뷰어 오버레이와 내보내기 렌더러가 같은 코드를 쓴다.
 /// 좌표는 페이지 픽셀. flat 배경은 solid, artwork 배경은 alpha .92 + feather, 글자는 semibold 가운데 정렬,
-/// 크기 6..max(.95glyph,8) 이진 탐색(.5px), 한글은 어절 우선 줄바꿈, artwork 위에서는 반대색 외곽선 후 fill.
+/// 크기 6..max(.95glyph,8) 이진 탐색(.5px), 한글·영문은 단어 우선 줄바꿈(60% 규칙), 일본어·중국어는 글자 단위,
+/// artwork 위에서는 반대색 외곽선 후 fill.
 /// </summary>
 public static class OverlayPainter
 {
@@ -46,10 +47,10 @@ public static class OverlayPainter
         var box = rect;
         box.Inflate(-patch.InnerPadding, -patch.InnerPadding);
         if (box.Width < 2 || box.Height < 2) box = rect;
-        // 한글 어절은 먼저 통째로 맞춰 보고, 최소 크기로도 안 들어갈 때만 글자 단위로 나눈다
-        var splitHangul = !Fits(patch.Text, patch.MinFontSize, box, splitHangul: false);
-        var size = PatchGeometry.FitFontSize(patch.MinFontSize, patch.MaxFontSize, s => Fits(patch.Text, s, box, splitHangul));
-        var lines = WrapLines(patch.Text, size, box.Width, splitHangul);
+        // 한글 어절·영문 단어는 통째로 맞춘 크기를 우선하고, 단어 안 줄바꿈 크기의 60% 미만일 때만 단어를 나눈다
+        var (size, splitWords) = PatchGeometry.ChooseWrapFontSize(patch.MinFontSize, patch.MaxFontSize,
+            s => Fits(patch.Text, s, box, splitWords: false), s => Fits(patch.Text, s, box, splitWords: true));
+        var lines = WrapLines(patch.Text, size, box.Width, splitWords);
         var lineHeight = LineHeight(size);
         var total = lines.Count * lineHeight;
         var y = box.Top + (box.Height - total) / 2;
@@ -102,20 +103,22 @@ public static class OverlayPainter
 
     private static double LineHeight(double size) => size * 1.22;
 
-    public static bool Fits(string text, double size, Rect box, bool splitHangul = true)
+    public static bool Fits(string text, double size, Rect box, bool splitWords = true)
     {
-        var lines = WrapLines(text, size, box.Width, splitHangul);
+        var lines = WrapLines(text, size, box.Width, splitWords);
         if (lines.Count * LineHeight(size) > box.Height + 0.5) return false;
         foreach (var l in lines) if (Measure(l, size) > box.Width + 0.5) return false;
         return true;
     }
 
     /// <summary>
-    /// 줄바꿈: 명시 줄바꿈 유지, 공백 단위(한글 어절·영문 단어) 우선, 한 토큰이 폭을 넘으면 글자 단위로 나눈다.
-    /// 영문 한 단어는 글자 단위로 쪼개지 않도록 Fits에서 폭 초과로 판정된다(더 작은 글자 크기를 고른다).
+    /// 줄바꿈: 명시 줄바꿈 유지. 일본어·중국어는 공백이 있어도 문장 안에서 글자 단위로 이어 줄을 바꾼다.
+    /// 한글 어절·영문 단어는 공백 단위로 넘기고, splitWords일 때만 폭을 넘는 단어를 글자 단위로 나눈다
+    /// (아니면 Fits에서 폭 초과로 판정돼 더 작은 글자 크기를 고른다).
     /// </summary>
-    public static List<string> WrapLines(string text, double size, double maxWidth, bool splitHangul = true)
+    public static List<string> WrapLines(string text, double size, double maxWidth, bool splitWords = true)
     {
+        var flowing = IsChineseOrJapanese(text);
         var result = new List<string>();
         foreach (var paragraph in text.Replace("\r\n", "\n").Split('\n'))
         {
@@ -126,13 +129,21 @@ public static class OverlayPainter
             {
                 var candidate = line.Length == 0 ? token : line + " " + token;
                 if (Measure(candidate, size) <= maxWidth) { line = candidate; continue; }
-                if (line.Length > 0) { result.Add(line); line = string.Empty; }
-                if (Measure(token, size) <= maxWidth || IsLatinWord(token) || (!splitHangul && ContainsHangul(token))) { line = token; continue; }
-                // CJK 등 공백 없는 긴 토큰: 글자 단위
+                if (flowing && !IsWord(token))
+                {
+                    // 일본어·중국어: 공백 뒤에 이어 붙이고 넘치는 글자부터 다음 줄로
+                    if (line.Length > 0) line += " ";
+                }
+                else
+                {
+                    if (line.Length > 0) { result.Add(line); line = string.Empty; }
+                    if (Measure(token, size) <= maxWidth || (!splitWords && IsWord(token))) { line = token; continue; }
+                }
+                // 공백 없는 CJK 토큰이나 나누기로 한 단어: 글자 단위
                 foreach (var ch in SplitGraphemes(token))
                 {
                     var c2 = line + ch;
-                    if (line.Length > 0 && Measure(c2, size) > maxWidth && !IsClosingPunctuation(ch)) { result.Add(line); line = ch; }
+                    if (line.Length > 0 && Measure(c2, size) > maxWidth && !IsClosingPunctuation(ch)) { result.Add(line.TrimEnd()); line = ch; }
                     else line = c2;
                 }
             }
@@ -141,9 +152,14 @@ public static class OverlayPainter
         return result;
     }
 
+    private static bool IsWord(string token) => IsLatinWord(token) || ContainsHangul(token);
+
     private static bool IsLatinWord(string token) => token.All(c => c < 0x2E80);
 
     private static bool ContainsHangul(string token) => token.Any(c => c is >= '가' and <= '힣');
+
+    private static bool IsChineseOrJapanese(string text) =>
+        !ContainsHangul(text) && text.Any(c => c is >= '぀' and <= 'ヿ' or >= '㐀' and <= '䶿' or >= '一' and <= '鿿');
 
     private static bool IsClosingPunctuation(string ch) => ch is "、" or "。" or "，" or "." or "," or "!" or "?" or "！" or "？" or "…" or "」" or "』" or ")" or "）" or "ー";
 

@@ -43,6 +43,8 @@ public static class PatchGeometry
     public const double ArtworkAlpha = 0.92;
     public const double MinFont = 6;
     public const double FontPrecision = 0.5;
+    /// <summary>단어를 지킨 크기가 단어 안 줄바꿈 크기의 이 비율 미만이면 단어 안에서도 줄을 바꾼다.</summary>
+    public const double WordWrapMinRatio = 0.6;
     public const double BalloonInkSafeRatio = 0.03;
 
     /// <summary>
@@ -181,6 +183,18 @@ public static class PatchGeometry
             if (fits(mid)) lo = mid; else hi = mid;
         }
         return lo;
+    }
+
+    /// <summary>
+    /// 단어(한글 어절·영문 단어)를 지킨 크기를 우선하되, 그 크기가 단어 안 줄바꿈을 허용한 크기의
+    /// 60% 미만이면(최소 크기로도 안 들어가면 포함) 단어 안 줄바꿈 크기를 고른다.
+    /// </summary>
+    public static (double Size, bool SplitWords) ChooseWrapFontSize(double min, double max, Func<double, bool> fitsWhole, Func<double, bool> fitsSplit)
+    {
+        var whole = fitsWhole(min) ? FitFontSize(min, max, fitsWhole) : 0;
+        if (whole >= Math.Max(min, max)) return (whole, false);
+        var split = FitFontSize(min, max, fitsSplit);
+        return whole >= WordWrapMinRatio * split ? (whole, false) : (split, true);
     }
 
     /// <summary>strip 풍선이 다음 slice로 넘친 부분: dx=(현재W-이전W)/2, dy=-이전H.</summary>

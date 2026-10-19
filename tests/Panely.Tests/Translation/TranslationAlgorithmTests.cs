@@ -298,6 +298,18 @@ public class PatchGeometryTests
         Assert.Equal(6, PatchGeometry.FitFontSize(6, 30, _ => false));
     }
 
+    [Theory]
+    [InlineData(18, 36, 36, true)]   // 50% → 단어 안 줄바꿈
+    [InlineData(28, 36, 28, false)]  // 약 78% → 단어 유지
+    [InlineData(40, 40, 40, false)]  // 단어 유지로 상한까지 들어감
+    [InlineData(5, 20, 20, true)]    // 단어 유지로는 최소 크기도 안 들어감
+    public void WrapFontSizeKeepsWordsUnlessUnderSixtyPercent(double wholeLimit, double splitLimit, double expected, bool expectedSplit)
+    {
+        var (size, split) = PatchGeometry.ChooseWrapFontSize(6, 40, s => s <= wholeLimit, s => s <= splitLimit);
+        Assert.InRange(size, expected - PatchGeometry.FontPrecision, expected);
+        Assert.Equal(expectedSplit, split);
+    }
+
     [Fact]
     public void ShiftToNextSliceUsesCenteringOffset()
     {
