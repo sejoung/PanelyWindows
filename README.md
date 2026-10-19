@@ -1,127 +1,188 @@
+<div align="center">
+
+<img src="src/Panely.App/Assets/panely-256.png" width="112" alt="Panely icon">
+
 # Panely for Windows
 
-로컬 만화·이미지를 읽는 Windows 리더입니다. 폴더·CBZ/ZIP·CBR/RAR을 열고 한 장/두 장/세로 스크롤, 오른쪽→왼쪽 읽기, 라이브러리, 이어보기, 북마크를 제공합니다. 실험 기능으로 기기 안에서 말풍선을 번역해 보여주고 번역본을 내보냅니다.
-기능별 구현·검수 현황은 [`docs/IMPLEMENTATION-STATUS.md`](docs/IMPLEMENTATION-STATUS.md), 설계 결정은 [`docs/adr/`](docs/adr/)에 있습니다.
+**A fast, offline comic and manga reader for Windows — with experimental on-device balloon translation.**
 
-## 구성
+[![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4?logo=windows&logoColor=white)](#requirements)
+[![.NET](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/download/dotnet/10.0)
+[![UI](https://img.shields.io/badge/UI-WPF-5C2D91)](#project-layout)
+[![ONNX Runtime](https://img.shields.io/badge/ONNX%20Runtime-DirectML-005CED?logo=onnx&logoColor=white)](#translation-experimental)
+[![Translation](https://img.shields.io/badge/translation-on--device-2EA44F)](#translation-experimental)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-| 프로젝트 | 역할 |
-|---|---|
-| `src/Panely.Domain` | 순수 계산: 펼침·맞춤·줌·휠 상태 머신·자연 정렬·OCR 타일·말풍선 묶기·패치 배치·AI 응답 파서 |
-| `src/Panely.Core` | 파일/ZIP/RAR·추출 캐시·상태 저장(state.json)·진단 로그·라이브러리 감시·리더 세션·번역/내보내기 작업 큐·모델 관리·Windows OCR·ONNX 어댑터·한영 문구 |
-| `src/Panely.App` | WPF UI: 리더 창, 툴바, 라이브러리, 뷰어, 썸네일, 설정, 작업 창, 번역 패널·편집·내보내기·AI 채팅 시트 |
-| `tests/Panely.Tests` | xUnit. `Vectors/`에 계산 기대값·저장 형식 스키마·예제 |
-| `tools/` | `make-samples.ps1`(QA 샘플 생성), `publish.ps1`(배포본), `IconBuilder`(아이콘 생성) |
+**English** · [한국어](README.ko.md)
 
-## 빌드·실행
+<img src="docs/images/reader-en.png" alt="Panely reading a two-page spread with the library sidebar and page thumbnails" width="860">
 
-필요한 것: Windows 10 19041 이상(1차 대상 Windows 11 x64), [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
-스크립트는 PATH의 `dotnet`이나 `%LOCALAPPDATA%\Microsoft\dotnet`에서 SDK를 찾습니다. 저장소 루트의 `.cmd`는 더블클릭이나 cmd에서 실행할 수 있고, 인자는 같은 이름의 `tools\*.ps1`로 그대로 넘어갑니다.
+</div>
 
-| 스크립트 | 하는 일 |
-|---|---|
-| `verify.cmd` | **린트·빌드·테스트·smoke·게시본 확인을 한 번에** 실행하고 단계별 요약 출력 (`-Quick`, `-Fix`, `-MinCoverage 80`) |
-| `build.cmd` | 솔루션 빌드 + 전체 테스트 (`-Configuration Release`, `-SkipTests`, `-Filter Translation`, `-Clean`) |
-| `install-local.cmd` | 빌드·테스트 → self-contained 게시 → `%LOCALAPPDATA%\Programs\Panely`에 설치 → 시작 메뉴 "Panely (Local)" → 실행 |
-| `uninstall-local.cmd` | 로컬 설치 제거. 사용자 데이터는 남김 (`-RemoveDevData`, `-RemoveData`) |
+## Features
 
-로컬에서 바로 테스트할 때는 이렇게 씁니다.
+**Reading**
+- Single page, two-page spread (with an optional standalone cover) and continuous vertical scroll for webtoons
+- Right-to-left mode for manga; only the on-screen order flips, so keyboard and mouse stay natural
+- Fit to screen / width / height, cursor-anchored zoom, size lock, and per-series zoom memory
+- Page slider, go-to-page, thumbnail strip, and "Up next" / "Previous volume" cards between volumes
+
+**Library**
+- File tree with live refresh, continue reading with progress rings, recents, favorites and page bookmarks
+- Remembers the last folder and per-series direction, layout, fit and translation settings
+
+**Files**
+- Folders, ZIP/CBZ and RAR/CBR (RAR4, RAR5, solid), detected by file header rather than extension
+- JPEG, PNG, WebP, GIF, HEIC/HEIF, BMP and TIFF, with natural sort ("2" before "10") and EXIF rotation
+- Nested archives (depth 3, guarded size and file-count limits) and a bounded extraction cache
+
+**Windows integration**
+- Dark theme with dark title bars, English and Korean UI (follows the system by default)
+- Single instance: opening another book from Explorer hands it to the running window
+- Optional "Open with Panely" entry without taking over the default ZIP/RAR app
+- No administrator rights required; a self-contained build runs without a .NET install
+
+## Translation (experimental)
+
+Panely can find speech balloons, read the text and draw a translation over the page — **entirely on your PC**. Nothing is sent to an online service.
+
+<div align="center">
+<img src="docs/images/before-after.png" alt="An English comic page and the same page translated into Korean" width="760">
+</div>
+
+- Source languages: Japanese (including vertical text), Chinese, English and Korean; the language can be detected automatically
+- Switch between the original and the translation, translate whole series in the background, and edit, hide or add balloons by hand
+- Export translated books as CBZ, ZIP or a folder, or round-trip the text through an AI chat service of your choice using a file
+- Models are downloaded once from pinned revisions and checked by SHA-256 before use
+
+| Step | Model | Size | Runs on |
+|---|---|---|---|
+| Balloon detection | [comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) (RT-DETR) | ~170 MB | GPU (DirectML), CPU fallback |
+| Japanese text | [manga-ocr](https://huggingface.co/ogkalu/manga-ocr-onnx) (int8) | ~117 MB | CPU |
+| Chinese / English / Korean text, language detection | [PP-OCRv5 mobile](https://huggingface.co/ogkalu/ppocr-v5-onnx) | ~43 MB | CPU |
+| Translation — Fast | [M2M100-418M](https://huggingface.co/Xenova/m2m100_418M) (int8) | ~640 MB | CPU |
+| Translation — Accurate | M2M100-418M (fp32) | ~2.5 GB | CPU |
+
+The device split comes from measurements: detection is about 2.5× faster on the GPU, while the OCR and translation models are faster on the CPU. Set `PANELY_ORT_DEVICE=cpu` to turn off the GPU entirely.
+
+> [!NOTE]
+> Translation quality is limited by the small M2M100 model. Short lines and idioms are often wrong — in the example above, "midnight" became "afternoon". Balloons the model can't translate keep their original text, and you can correct any balloon in Edit Balloons.
+
+## Getting started
+
+### Requirements
+
+- Windows 10 version 2004 (build 19041) or later; Windows 11 x64 is the primary target
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) to build from source
+- For translation: about 1 GB of disk space for the Fast language pack; any DirectX 12 GPU speeds up detection
+
+### Build, install and run
+
+There are no prebuilt releases yet. Clone the repository and run the installer script from the repository root:
 
 ```powershell
-install-local.cmd                          # 테스트 후 설치하고 실행
-install-local.cmd -SkipTests               # 빠르게(설치만 몇 초)
-install-local.cmd -Samples -Isolated       # QA 샘플 라이브러리를 열고, 실제 데이터 대신 %LOCALAPPDATA%\Panely-dev 사용
-install-local.cmd -Open "D:\Comics\Series A"
-install-local.cmd -NoLaunch -DesktopShortcut
+git clone https://github.com/sejoung/PanelyWindows.git
+cd PanelyWindows
+install-local.cmd
 ```
 
-- 관리자 권한이 필요 없고, 설치본은 .NET 런타임이 없어도 실행됩니다.
-- 실행 중인 설치본은 위치를 저장하도록 먼저 정상 종료한 뒤 교체합니다.
-- 버전은 `1.0.0-dev.<날짜.시각>+<커밋>` 형식이라 설정 › 진단이나 정보 창에서 어떤 빌드인지 확인할 수 있습니다. 설치 폴더의 `install-info.json`에도 남습니다.
-
-### 한 번에 검증하기 (`verify.cmd`)
-
-커밋하거나 배포하기 전에 실행합니다. 실패한 단계가 있어도 나머지를 끝까지 돌린 뒤 요약하고, 하나라도 실패하면 종료 코드 1을 냅니다.
-
-| 단계 | 내용 |
-|---|---|
-| format | `dotnet format --verify-no-changes --severity warn`: `.editorconfig`의 공백·코드 스타일·분석기 규칙 |
-| build | Release 빌드, .NET 분석기(`latest-recommended`) 경고를 오류로 처리(`-warnaserror`) |
-| test | 단위·계약 테스트(smoke 제외) + 커버리지 요약 |
-| scripts & data | PowerShell 구문, 한글 스크립트의 UTF-8 BOM, `.cmd` CRLF, JSON 문법, (설치 시) PSScriptAnalyzer |
-| smoke | 실제 `Panely.exe`를 격리된 데이터 폴더로 띄워 열기·종료·상태 저장·손상 파일·single-instance 전달 확인 |
-| publish smoke | self-contained 게시본으로 smoke 재실행(.NET 미설치 PC 조건) |
+This builds and tests the app, publishes a self-contained copy to `%LOCALAPPDATA%\Programs\Panely`, adds a **Panely (Local)** Start menu shortcut and starts it.
 
 ```powershell
-verify.cmd            # 전체(약 40초)
-verify.cmd -Quick     # smoke·게시 생략(약 15초)
-verify.cmd -Fix       # 형식 자동 수정 후 검증
+install-local.cmd -SkipTests                 # install only (a few seconds)
+install-local.cmd -Open "D:\Comics\Series A" # open a folder after installing
+uninstall-local.cmd                          # remove the install; your data stays
 ```
 
-린트 규칙은 `.editorconfig`에 있습니다. 문화권에 따라 달라지는 서식·비교(CA1305/CA1310)와 해제되지 않는 리소스(CA1001)는 빌드를 막고, 성능 힌트는 제안으로만 표시합니다.
+To make a portable ZIP instead:
 
-테스트 구성은 이렇습니다.
-- `tests/Panely.Tests`: 계산·파일·저장·번역 로직, 명세 test-vectors, 계약 검사(코드가 쓰는 문구 key가 한영 문구표에 있는지와 치환자 일치, macOS 표현 금지, `domain.schema.json` 검증, 명세 패키지 해시).
-- `tests/Panely.App.Tests`: 테마 토큰, 단축키 해석·중복, 이미지 디코딩(EXIF 회전), 번역 패치 렌더링 픽셀 검사, 실제 앱 smoke(`Category=Smoke`).
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\publish.ps1                 # artifacts\Panely-win-x64.zip
+powershell -ExecutionPolicy Bypass -File tools\publish.ps1 -Runtime win-arm64
+```
 
-dotnet CLI로 직접 할 수도 있습니다.
+### Turning on translation
+
+Open **Settings › Experimental** and turn on translation, then download the language pack from the translation panel. After that, translation works offline.
+
+<div align="center">
+<img src="docs/images/translation-en.png" alt="Panely showing the translated pages" width="860">
+</div>
+
+## Keyboard shortcuts
+
+| Action | Keys |
+|---|---|
+| Open / Settings | `Ctrl+O` / `Ctrl+,` |
+| Single / two-page / vertical | `Ctrl+Shift+1` / `2` / `3` |
+| Fit screen / width / height | `Ctrl+1` / `2` / `3` |
+| Zoom in / out / reset | `Ctrl++` / `Ctrl+-` / `Ctrl+0` |
+| Next / previous page | `Space`, arrow keys (follow reading direction) |
+| Previous / next volume | `[` / `]` |
+| Go to page / bookmark / favorite | `Ctrl+G` / `Ctrl+D` / `Ctrl+Shift+D` |
+| Pin library / toolbar, thumbnails | `Ctrl+Alt+S` / `T` / `P` |
+| Original ↔ translation / translate / edit balloons / jobs | `Ctrl+Shift+T` / `Ctrl+Alt+Y` / `Ctrl+Shift+E` / `Ctrl+Alt+J` |
+| Full screen | `F11` |
+
+Every command is also in the menus; the full list is in [`CommandRegistry.cs`](src/Panely.Core/Commands/CommandRegistry.cs).
+
+## Development
+
+### Project layout
+
+| Project | Role |
+|---|---|
+| `src/Panely.Domain` | Pure logic: spreads, fit and zoom, wheel paging, natural sort, OCR tiling, balloon grouping, patch layout |
+| `src/Panely.Core` | Files and archives, extraction cache, state storage, diagnostics, library watching, translation and export queues, model management, ONNX adapters, strings |
+| `src/Panely.App` | WPF UI: reader window, toolbar, library, viewer, thumbnails, settings, jobs, translation panel and editing |
+| `tests/Panely.Tests` | Unit and contract tests; `Vectors/` holds expected values, the storage schema and examples |
+| `tests/Panely.App.Tests` | Theme, shortcuts, image decoding, patch rendering, and smoke tests that launch the real app |
+| `tools/` | Build, install, verify and publish scripts, QA sample generator, icon builder |
+
+### Scripts
+
+The `.cmd` files in the repository root pass their arguments to the matching `tools\*.ps1`. They find `dotnet` on `PATH` or in `%LOCALAPPDATA%\Microsoft\dotnet`.
+
+| Script | What it does |
+|---|---|
+| `verify.cmd` | Lint, warning-free build, tests with coverage, script checks, app smoke test and published-build smoke test, with a summary (`-Quick`, `-Fix`, `-MinCoverage 80`) |
+| `build.cmd` | Build the solution and run the tests (`-Configuration Release`, `-SkipTests`, `-Filter Translation`, `-Clean`) |
+| `install-local.cmd` | Build, test, publish and install locally, then launch (`-SkipTests`, `-Samples`, `-Isolated`, `-Open <path>`) |
+| `uninstall-local.cmd` | Remove the local install (`-RemoveDevData`, `-RemoveData`) |
+
+Run `verify.cmd` before sending a change (about 40 seconds; `-Quick` skips the smoke tests). Style rules live in `.editorconfig`, and analyzer warnings fail the build.
 
 ```powershell
 dotnet build Panely.sln
 dotnet test tests/Panely.Tests
 dotnet run --project src/Panely.App -- "D:\Comics\Series A"
+powershell -ExecutionPolicy Bypass -File tools\make-samples.ps1 -Out D:\PanelySamples   # QA sample library
 ```
 
-배포본(.NET 런타임이 없는 PC에서도 실행, 관리자 권한 불필요):
+### Data and environment variables
 
-```powershell
-powershell -ExecutionPolicy Bypass -File tools\publish.ps1                 # artifacts\Panely-win-x64(.zip)
-powershell -ExecutionPolicy Bypass -File tools\publish.ps1 -Runtime win-arm64
-```
+User data lives in `%LOCALAPPDATA%\Panely\`: `Data\state.json`, `Data\edits\` (your balloon edits), `Cache\` (extraction, translation, thumbnails), `Diagnostics\` and `Models\`. Clearing the cache keeps your data and models.
 
-QA용 샘플 라이브러리(자연 정렬, 두 장, 웹툰, 겉포장 시리즈, 중첩 zip, 손상 파일, 영어 말풍선 페이지):
-
-```powershell
-powershell -ExecutionPolicy Bypass -File tools\make-samples.ps1 -Out D:\PanelySamples
-```
-
-## 데이터 위치
-
-`%LOCALAPPDATA%\Panely\` 아래에 `Data\state.json`, `Data\edits\`(직접 고친 번역), `Cache\extraction|translation|thumbnails\`, `Diagnostics\`, `Models\`가 생깁니다. 캐시를 지워도 Data와 Models는 남습니다.
-
-| 환경 변수 | 용도 |
+| Variable | Purpose |
 |---|---|
-| `PANELY_DATA_ROOT` | 데이터 위치 바꾸기(테스트·포터블) |
-| `PANELY_DEV_PSEUDO_TRANSLATION=1` | 모델 없이 번역 UI를 확인하는 개발용 가짜 공급자(기본 꺼짐, UI에 표시됨) |
-| `PANELY_TEST_DETECTOR_MODEL` | 실제 `detector.onnx` 경로를 주면 탐지 통합 테스트 실행 |
+| `PANELY_DATA_ROOT` | Use a different data folder (tests, portable use) |
+| `PANELY_ORT_DEVICE=cpu` | Run every model on the CPU |
+| `PANELY_DEV_PSEUDO_TRANSLATION=1` | Fake translation provider for UI work without models (shown in the UI) |
+| `PANELY_TEST_DETECTOR_MODEL` | Path to `detector.onnx` to run the detector integration test |
 
-## 번역(실험 기능)
+### Documentation
 
-설정 › 실험적 기능에서 **번역 보조**를 켭니다. 처음 번역할 때 번역 패널이나 설정에서 언어팩을 내려받습니다(고정 revision, sha256 검증).
+- [Architecture decision records](docs/adr/) — why things are the way they are (Korean)
+- [Implementation status](docs/IMPLEMENTATION-STATUS.md) — what was verified and the known limits (Korean)
 
-- 말풍선 탐지(RT-DETR): 약 170MB
-- 글자 인식: 일본어 manga-ocr 약 117MB, 중국어·영어·한국어·언어 감지 PP-OCRv5 약 43MB
-- 번역 Fast: M2M100-418M int8, 약 640MB / Accurate: fp32, 약 2.5GB
+## Contributing
 
-설치한 뒤에는 네트워크 없이 동작합니다. 글자 인식은 [comic-translate](https://github.com/ogkalu2/comic-translate)와 같은 구성(일본어 manga-ocr, 그 외 PP-OCRv5)이라 세로쓰기 일본어도 읽습니다. 말풍선 탐지는 GPU(DirectML), 글자 인식·번역은 실측상 더 빠른 CPU에서 돕니다. 말투 맞춤은 검증된 Windows 로컬 모델이 없어 비활성 상태입니다. 자세한 제약은 구현 현황 문서를 보세요.
+Issues and pull requests are welcome. Please run `verify.cmd` before opening a pull request, and add an ADR under `docs/adr/` when you make a design decision that others will need to understand later.
 
-## 단축키(일부)
+## License
 
-| 동작 | 키 |
-|---|---|
-| 열기 / 설정 | Ctrl+O / Ctrl+, |
-| 한 장 / 두 장 / 세로 | Ctrl+Shift+1 / 2 / 3 |
-| 화면·가로·세로 맞춤 | Ctrl+1 / 2 / 3 |
-| 확대 / 축소 / 초기화 | Ctrl++ / Ctrl+- / Ctrl+0 |
-| 앞으로 / 뒤로 | Space, 방향키(읽기 방향 반영) |
-| 이전 / 다음 권 | [ / ] |
-| 쪽 이동 / 북마크 / 즐겨찾기 | Ctrl+G / Ctrl+D / Ctrl+Shift+D |
-| 라이브러리·툴바 고정, 썸네일 | Ctrl+Alt+S / T / P |
-| 원본↔번역 / 번역 실행 / 말풍선 편집 / 작업 창 | Ctrl+Shift+T / Ctrl+Alt+Y / Ctrl+Shift+E / Ctrl+Alt+J |
-| 전체 화면 | F11 |
+Panely for Windows is licensed under the [Apache License 2.0](LICENSE).
 
-전체 목록은 앱의 각 메뉴와 [`CommandRegistry.cs`](src/Panely.Core/Commands/CommandRegistry.cs)에 있습니다.
+The app icon, string catalog and screen design come from the original Panely (Apache-2.0, see [`assets/LICENSE-original.txt`](assets/LICENSE-original.txt)). The OCR pipeline follows [comic-translate](https://github.com/ogkalu2/comic-translate). Libraries and models are listed with their licenses in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md); models are downloaded by the user and are not redistributed.
 
-## 라이선스
-
-[LICENSE](LICENSE). 사용한 라이브러리와 모델은 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)에 정리했습니다.
+The screenshots use a synthetic demo comic made for this README.
