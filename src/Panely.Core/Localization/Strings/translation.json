@@ -129,6 +129,15 @@
     "en": "The language new series are translated into. This is not the book's own language: that is detected the first time a book is translated, and you can change it under Book's language at the top of the translation panel. Both are remembered per series.",
     "ko": "새 시리즈를 번역해서 보여 줄 언어입니다. 책의 원문 언어가 아닙니다. 원문 언어는 처음 번역할 때 자동으로 감지되며, 번역 패널 맨 위 '원문 언어'에서 바꿀 수 있습니다. 둘 다 시리즈별로 기억됩니다."
   },
+  // AI 채팅으로 다듬기: 답을 적용한 결과 카드
+  "Applied the reply": { "en": "Applied the reply", "ko": "답을 적용했습니다" },
+  "Applied, but some balloons didn't come back": { "en": "Applied, but some balloons didn't come back", "ko": "적용했지만 돌아오지 않은 말풍선이 있습니다" },
+  "Checked the reply — no translation needed changing": { "en": "Checked the reply — no translation needed changing", "ko": "답을 확인했습니다. 바꿀 번역은 없었습니다" },
+  "Undo This Reply": { "en": "Undo This Reply", "ko": "이 답 되돌리기" },
+  "Undid this reply. The translations it changed are back.": {
+    "en": "Undid this reply. The translations it changed are back.",
+    "ko": "이 답을 되돌렸습니다. 바뀌었던 번역이 원래대로 돌아왔습니다."
+  },
   // 종료 확인: 작업 큐는 앱과 함께 사라지므로 "다시 시작하면 저절로 이어진다"고 하지 않는다.
   "Exit Panely?": { "en": "Exit Panely?", "ko": "Panely를 종료할까요?" },
   "Quitting Panely stops translating and exporting. Translated pages are kept, so starting again picks up where it left off.": {

@@ -1,7 +1,9 @@
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using Microsoft.Win32;
+using Panely.App.Controls;
 using Panely.Core.Abstractions;
 using Panely.Core.Localization;
 using Panely.Core.Translation;
@@ -23,6 +25,10 @@ internal sealed class AiChatSheet : SheetWindow
     private readonly TranslationScope _scope;
     private readonly TextBox _prompt;
     private readonly TextBlock _status;
+    private readonly Border _result;
+    private readonly IconGlyph _resultIcon;
+    private readonly TextBlock _resultTitle;
+    private readonly TextBlock _resultDetail;
     private readonly Button _undo;
     private readonly TextBox _from;
     private readonly TextBox _to;
@@ -76,12 +82,30 @@ internal sealed class AiChatSheet : SheetWindow
         body.Children.Add(Gap(replyRow, 6));
         _status = Ui.Text(string.Empty, "Text.Caption");
         body.Children.Add(Gap(_status, 8));
-        _undo = Ui.Button(Loc.T("Undo"), Undo, tooltip: Loc.T("Put back the translations this reply changed"));
-        _undo.Visibility = Visibility.Collapsed;
-        body.Children.Add(Gap(_undo, 6));
+
+        // 답을 적용한 결과 카드: 끝났는지(✓)·빠진 게 있는지(⚠)를 한눈에, 되돌리기는 카드 안의 링크로
+        _resultIcon = new IconGlyph { Glyph = Icons.Check, Width = 16, Height = 16, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, 10, 0) };
+        _resultTitle = Ui.Text(string.Empty, "Text.Body");
+        _resultTitle.FontWeight = FontWeights.SemiBold;
+        _resultDetail = Ui.Caption(string.Empty);
+        _undo = Ui.LinkButton(Loc.T("Undo This Reply"), Undo);
+        _undo.ToolTip = Loc.T("Put back the translations this reply changed");
+        _undo.HorizontalAlignment = HorizontalAlignment.Right;
+        var resultText = new StackPanel();
+        resultText.Children.Add(_resultTitle);
+        resultText.Children.Add(Gap(_resultDetail, 2));
+        resultText.Children.Add(Gap(_undo, 4));
+        var resultRow = new DockPanel();
+        DockPanel.SetDock(_resultIcon, Dock.Left);
+        resultRow.Children.Add(_resultIcon);
+        resultRow.Children.Add(resultText);
+        _result = new Border { Child = resultRow, Padding = new Thickness(12, 10, 12, 10), CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1), Visibility = Visibility.Collapsed };
+        _result.SetResourceReference(Border.BackgroundProperty, "Brush.BgTertiary");
+        _result.SetResourceReference(Border.BorderBrushProperty, "Brush.BorderSubtle");
+        body.Children.Add(Gap(_result, 8));
 
         body.Children.Add(Gap(Ui.Caption(Loc.T("Your text leaves your Mac only when you give it to a chat. Changed balloons count as your edits: each can go back to the machine translation.")), 14));
-        var close = Ui.Button(Loc.T("Done"), Close);
+        var close = Ui.Button(Loc.T("Done"), Close, accent: true);
         close.HorizontalAlignment = HorizontalAlignment.Right;
         body.Children.Add(Gap(close, 12));
         SetBody(body, save);
@@ -210,6 +234,7 @@ internal sealed class AiChatSheet : SheetWindow
         var parsed = AiChatExchange.Parse(reply);
         if (parsed.Count == 0)
         {
+            _result.Visibility = Visibility.Collapsed;
             _status.Text = Loc.T("No balloon lines like “[p12-3] …” in it. Use the chat's whole reply.");
             return;
         }
@@ -230,14 +255,30 @@ internal sealed class AiChatSheet : SheetWindow
             else (edits, index) = PageEditsEditor.Ensure(edits, bubble.RecognizedSource, bubble.Rect);
             _f.Service.Edits.Save(PageEditsEditor.SetTranslation(edits, index, _target, text));
         }
-        _undo.Visibility = changes.Updates.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         var returned = changes.Returned;
-        _status.Text = changes.Missing.Count == 0
-            ? Loc.T("All %lld balloons came back: %lld changed, %lld already right.", returned, changes.Updates.Count, changes.Unchanged)
-            : Loc.T("%lld balloons came back: %lld changed, %lld already right. Missing %lld: %@ — ask the chat for those, or choose fewer pages.",
-                returned, changes.Updates.Count, changes.Unchanged, changes.Missing.Count, string.Join(", ", changes.Missing.Take(12)) + (changes.Missing.Count > 12 ? "…" : string.Empty));
-        if (changes.Unknown > 0) _status.Text += " " + Loc.T("Ignored %lld lines with ids that weren't in the file.", changes.Unknown);
+        var missing = changes.Missing.Count > 0;
+        var detail = missing
+            ? Loc.T("%lld balloons came back: %lld changed, %lld already right. Missing %lld: %@ — ask the chat for those, or choose fewer pages.",
+                returned, changes.Updates.Count, changes.Unchanged, changes.Missing.Count, string.Join(", ", changes.Missing.Take(12)) + (changes.Missing.Count > 12 ? "…" : string.Empty))
+            : Loc.T("All %lld balloons came back: %lld changed, %lld already right.", returned, changes.Updates.Count, changes.Unchanged);
+        if (changes.Unknown > 0) detail += " " + Loc.T("Ignored %lld lines with ids that weren't in the file.", changes.Unknown);
+        var title = missing ? Loc.T("Applied, but some balloons didn't come back")
+            : changes.Updates.Count > 0 ? Loc.T("Applied the reply")
+            : Loc.T("Checked the reply — no translation needed changing");
+        ShowResult(missing ? Icons.Warning : Icons.Check, missing ? "Brush.Danger" : "Brush.Accent", title, detail, canUndo: changes.Updates.Count > 0);
         _f.Host?.InvalidateOverlay();
+    }
+
+    private void ShowResult(Geometry icon, string iconBrush, string title, string detail, bool canUndo)
+    {
+        _status.Text = string.Empty;
+        _resultIcon.Glyph = icon;
+        _resultIcon.SetResourceReference(IconGlyph.ForegroundProperty, iconBrush);
+        _resultTitle.Text = title;
+        _resultDetail.Text = detail;
+        _resultDetail.Visibility = detail.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        _undo.Visibility = canUndo ? Visibility.Visible : Visibility.Collapsed;
+        _result.Visibility = Visibility.Visible;
     }
 
     private void Undo()
@@ -245,8 +286,7 @@ internal sealed class AiChatSheet : SheetWindow
         if (_undoSnapshot is null) return;
         _f.Service.Edits.Restore(_undoSnapshot);
         _undoSnapshot = null;
-        _undo.Visibility = Visibility.Collapsed;
-        _status.Text = Loc.T("Put back the translations this reply changed");
+        ShowResult(Icons.Refresh, "Brush.TextSecondary", Loc.T("Undid this reply. The translations it changed are back."), string.Empty, canUndo: false);
         _f.Host?.InvalidateOverlay();
     }
 }
