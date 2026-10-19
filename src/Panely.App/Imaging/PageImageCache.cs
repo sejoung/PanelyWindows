@@ -11,9 +11,10 @@ namespace Panely.App.Imaging;
 /// <summary>
 /// 페이지 이미지 스케줄러(07 ImageScheduler, 04 이미지 로딩 정책).
 /// - 헤더로 치수만 먼저(아카이브 64KiB prefix, 실패 시 전체).
-/// - 우선순위 목록 순서로 decode, 동시성 max(2,min(8,CPU)), 새 요청은 이전 대기 작업을 취소.
+/// - 우선순위 대기열 순서로 decode, 동시성 max(2,min(8,CPU)). 새 요청은 아직 시작 안 한 대기열을 통째로 바꾸고,
+///   이미 decode 중인 쪽은 끝까지 진행한다(빠르게 넘겨도 다시 필요해진 쪽이 대기열에서 빠지지 않는다).
 /// - 메모리 예산 RAM/16 (150MiB..1GiB), 최대 100장, 비용 w×h×4. keep 범위 밖부터 LRU 제거.
-/// - 결과는 UI 스레드에 배치 게시. 실패한 쪽은 keep 범위 밖으로 나가면 실패 상태 해제.
+/// - 결과는 UI 스레드에 배치 게시(이미지는 Normal, 치수만은 Background). 실패한 쪽은 keep 범위 밖으로 나가면 실패 상태 해제.
 /// 모든 public 멤버는 UI 스레드에서 호출한다.
 /// </summary>
 public sealed class PageImageCache : IDisposable
@@ -36,19 +37,22 @@ public sealed class PageImageCache : IDisposable
     private readonly IPageDecoder _decoder;
     private readonly IDiagnostics? _diagnostics;
     private readonly Dictionary<int, Slot> _slots = new();
-    private readonly HashSet<int> _inFlight = new();
     private readonly HashSet<int> _sizeInFlight = new();
     private readonly ConcurrentQueue<Result> _results = new();
-    private readonly SemaphoreSlim _decodeGate;
     private readonly SemaphoreSlim _headerGate = new(4);
     private readonly long _budgetBytes;
-    private CancellationTokenSource _requestCts = new();
+    // decode 대기열·진행 중·worker 수는 _queueLock 안에서만 바꾼다(worker 스레드와 공유)
+    private readonly object _queueLock = new();
+    private readonly List<int> _queue = new();
+    private readonly HashSet<int> _running = new();
+    private int _workers;
     private CancellationTokenSource _bookCts = new();
     private OpenedBook? _book;
     private long _epoch;
     private long _useClock;
     private long _totalCost;
     private bool _flushScheduled;
+    private bool _urgentFlushScheduled;
     private PageRange _keep;
 
     public PageImageCache(Dispatcher dispatcher, IPageDecoder decoder, IDiagnostics? diagnostics)
@@ -57,7 +61,6 @@ public sealed class PageImageCache : IDisposable
         _decoder = decoder;
         _diagnostics = diagnostics;
         Concurrency = Math.Max(2, Math.Min(8, Environment.ProcessorCount));
-        _decodeGate = new SemaphoreSlim(Concurrency);
         _budgetBytes = ComputeBudget();
     }
 
@@ -84,13 +87,17 @@ public sealed class PageImageCache : IDisposable
 
     public void SetBook(OpenedBook? book)
     {
-        _epoch++;
-        _requestCts.Cancel();
-        _requestCts = new CancellationTokenSource();
+        lock (_queueLock)
+        {
+            // 이전 책 worker는 epoch가 달라 대기열을 더 꺼내지 않고 worker 수에서도 빠진다
+            _epoch++;
+            _queue.Clear();
+            _running.Clear();
+            _workers = 0;
+        }
         _bookCts.Cancel();
         _bookCts = new CancellationTokenSource();
         _slots.Clear();
-        _inFlight.Clear();
         _sizeInFlight.Clear();
         while (_results.TryDequeue(out _)) { }
         _totalCost = 0;
@@ -124,56 +131,68 @@ public sealed class PageImageCache : IDisposable
     }
 
     /// <summary>
-    /// decode 요청. priority 순서로 시작하고 이전 요청의 아직 시작 안 한 작업은 취소한다(슬라이더 연속 이동).
-    /// keep 범위 밖 실패는 해제한다.
+    /// decode 요청. 대기열을 priority 순서로 바꾸고(이전 요청의 아직 시작 안 한 쪽은 버림, 슬라이더 연속 이동),
+    /// 모자란 만큼 worker를 띄운다. keep 범위 밖 실패는 해제한다.
     /// </summary>
     public void Request(IReadOnlyList<int> priority, PageRange keep)
     {
         var book = _book;
         if (book is null) return;
         _keep = keep;
-        _requestCts.Cancel();
-        _requestCts = new CancellationTokenSource();
-        var token = CancellationTokenSource.CreateLinkedTokenSource(_requestCts.Token, _bookCts.Token).Token;
 
         foreach (var (index, slot) in _slots)
             if (slot.Failed && !keep.Contains(index)) slot.Failed = false;
 
-        var epoch = _epoch;
-        foreach (var index in priority)
+        int start;
+        long epoch;
+        lock (_queueLock)
         {
-            if (index < 0 || index >= book.Pages.Count) continue;
-            if (_slots.TryGetValue(index, out var s) && (s.Image is not null || s.Failed)) { if (s.Image is not null) s.LastUse = ++_useClock; continue; }
-            if (!_inFlight.Add(index)) continue;
-            var page = book.Pages[index];
-            _ = Task.Run(() => DecodeWorker(book, page, index, epoch, token));
+            epoch = _epoch;
+            _queue.Clear();
+            foreach (var index in priority)
+            {
+                if (index < 0 || index >= book.Pages.Count) continue;
+                if (_slots.TryGetValue(index, out var s) && (s.Image is not null || s.Failed)) { if (s.Image is not null) s.LastUse = ++_useClock; continue; }
+                if (_running.Contains(index) || _queue.Contains(index)) continue;
+                _queue.Add(index);
+            }
+            start = Math.Max(0, Math.Min(Concurrency - _workers, _queue.Count));
+            _workers += start;
         }
+        var token = _bookCts.Token;
+        for (var i = 0; i < start; i++) _ = Task.Run(() => DecodeLoop(book, epoch, token));
         Evict();
     }
 
-    private async Task DecodeWorker(OpenedBook book, PageEntry page, int index, long epoch, CancellationToken token)
+    /// <summary>대기열이 빌 때까지 앞에서부터 꺼내 decode한다. 책이 바뀌면(epoch) 바로 끝낸다.</summary>
+    private async Task DecodeLoop(OpenedBook book, long epoch, CancellationToken token)
     {
-        var entered = false;
-        try
+        while (true)
         {
-            await _decodeGate.WaitAsync(token).ConfigureAwait(false);
-            entered = true;
-            token.ThrowIfCancellationRequested();
-            var image = await _decoder.DecodeAsync(book, page, _bookCts.Token).ConfigureAwait(false);
-            Post(new Result(epoch, index, image, new SizeD(image.PixelWidth, image.PixelHeight), false, false));
-        }
-        catch (OperationCanceledException)
-        {
-            Post(new Result(epoch, index, null, null, false, SizeOnly: true) with { Failed = false });
-        }
-        catch (Exception ex)
-        {
-            _diagnostics?.Log(Panely.Domain.Model.LogLevel.Warning, LogCategory.Image, $"Decode failed page={index + 1} ext={page.Extension}: {ex.GetType().Name}");
-            Post(new Result(epoch, index, null, null, true, false));
-        }
-        finally
-        {
-            if (entered) _decodeGate.Release();
+            int index;
+            lock (_queueLock)
+            {
+                if (epoch != _epoch) return; // SetBook이 worker 수를 이미 0으로 돌렸다
+                if (_queue.Count == 0) { _workers--; return; }
+                index = _queue[0];
+                _queue.RemoveAt(0);
+                _running.Add(index);
+            }
+            var page = book.Pages[index];
+            try
+            {
+                var image = await _decoder.DecodeAsync(book, page, token).ConfigureAwait(false);
+                Post(new Result(epoch, index, image, new SizeD(image.PixelWidth, image.PixelHeight), false, false));
+            }
+            catch (OperationCanceledException)
+            {
+                // 책이 바뀜: 결과는 epoch가 달라 버려진다
+            }
+            catch (Exception ex)
+            {
+                _diagnostics?.Log(Panely.Domain.Model.LogLevel.Warning, LogCategory.Image, $"Decode failed page={index + 1} ext={page.Extension}: {ex.GetType().Name}");
+                Post(new Result(epoch, index, null, null, true, false));
+            }
         }
     }
 
@@ -229,17 +248,21 @@ public sealed class PageImageCache : IDisposable
     private void Post(Result result)
     {
         _results.Enqueue(result);
+        // 이미지 결과는 입력보다 먼저 게시해(Normal) 키를 연타하는 중에도 새 쪽이 바로 뜨게 하고,
+        // 치수만 알린 결과는 Background로 모아 vertical 배치 재계산 횟수를 줄인다.
+        var urgent = result.Image is not null || result.Failed;
         lock (_results)
         {
-            if (_flushScheduled) return;
+            if (urgent ? _urgentFlushScheduled : _flushScheduled) return;
             _flushScheduled = true;
+            if (urgent) _urgentFlushScheduled = true;
         }
-        _dispatcher.BeginInvoke(DispatcherPriority.Background, Flush);
+        _dispatcher.BeginInvoke(urgent ? DispatcherPriority.Normal : DispatcherPriority.Background, Flush);
     }
 
     private void Flush()
     {
-        lock (_results) _flushScheduled = false;
+        lock (_results) _flushScheduled = _urgentFlushScheduled = false;
         var changed = new HashSet<int>();
         var sizes = new HashSet<int>();
         while (_results.TryDequeue(out var r))
@@ -248,12 +271,6 @@ public sealed class PageImageCache : IDisposable
             if (r.SizeOnly)
             {
                 _sizeInFlight.Remove(r.Index);
-                if (r.Image is null && r.Size is null && !r.Failed)
-                {
-                    // 취소된 decode 또는 헤더 실패
-                    _inFlight.Remove(r.Index);
-                    continue;
-                }
                 if (r.Size is { } sz)
                 {
                     var slot = SlotFor(r.Index);
@@ -262,7 +279,8 @@ public sealed class PageImageCache : IDisposable
                 continue;
             }
 
-            _inFlight.Remove(r.Index);
+            // 슬롯에 결과를 넣는 이 시점에 진행 중에서 뺀다(그 사이 Request가 같은 쪽을 다시 decode하지 않게)
+            lock (_queueLock) _running.Remove(r.Index);
             var s = SlotFor(r.Index);
             if (r.Failed)
             {
@@ -309,7 +327,11 @@ public sealed class PageImageCache : IDisposable
 
     public void Dispose()
     {
-        _requestCts.Cancel();
+        lock (_queueLock)
+        {
+            _epoch++;
+            _queue.Clear();
+        }
         _bookCts.Cancel();
         _slots.Clear();
     }

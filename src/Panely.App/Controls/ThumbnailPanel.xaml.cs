@@ -192,6 +192,8 @@ public partial class ThumbnailPanel : UserControl
                     await Dispatcher.InvokeAsync(() =>
                     {
                         if (token.IsCancellationRequested) return;
+                        // 헤더 치수가 아직 없으면 썸네일 비율로 셀 높이를 바로 맞춘다
+                        if (image.PixelWidth > 0) item.Aspect = image.PixelHeight / (double)image.PixelWidth;
                         item.Image = image;
                         Track(item);
                     });

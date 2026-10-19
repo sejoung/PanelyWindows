@@ -180,22 +180,21 @@ public sealed class BookOpener : IBookOpener
                 .ConfigureAwait(false);
         }
 
-        return BuildFolderBook(resolution.BookPath, volumes, progress, ct);
+        return BuildFolderBook(resolution.BookPath, resolution.BookAnalysis, volumes, progress, ct);
     }
 
-    private OpenedBook BuildFolderBook(string bookFolder, VolumeContext volumes, IProgress<LoadStage>? progress, CancellationToken ct)
+    private OpenedBook BuildFolderBook(string bookFolder, FolderAnalysis? analysis, VolumeContext volumes, IProgress<LoadStage>? progress, CancellationToken ct)
     {
-        var analysis = FolderAnalyzer.Analyze(bookFolder);
+        analysis ??= FolderAnalyzer.Analyze(bookFolder);
         if (!analysis.HasDirectImages) throw new BookOpenException(OpenErrorKind.Empty, Loc.T("Folder is empty or has no supported content"));
         var title = Path.GetFileName(bookFolder.TrimEnd('\\'));
         if (string.IsNullOrEmpty(title)) title = bookFolder;
         var source = _state.GetOrCreateSource(bookFolder, SourceKind.Folder, title);
         var bookRef = new BookRef(source.Id, null);
         var pages = new List<PageEntry>(analysis.Images.Count);
-        foreach (var file in analysis.Images)
+        foreach (var info in analysis.Images)
         {
             ct.ThrowIfCancellationRequested();
-            var info = new FileInfo(file);
             var mtime = new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeMilliseconds();
             var rel = info.Name;
             pages.Add(new PageEntry
@@ -428,12 +427,11 @@ public sealed class BookOpener : IBookOpener
             }
 
             var bookRef = new BookRef(source.Id, bookInner);
-            var analysis = FolderAnalyzer.Analyze(bookFolder);
+            var analysis = resolution.BookAnalysis ?? FolderAnalyzer.Analyze(bookFolder);
             var pages = new List<PageEntry>(analysis.Images.Count);
-            foreach (var file in analysis.Images)
+            foreach (var fi in analysis.Images)
             {
                 ct.ThrowIfCancellationRequested();
-                var fi = new FileInfo(file);
                 var rel = fi.Name;
                 var entryPath = bookInner is null ? rel : $"{bookInner}/{rel}";
                 pages.Add(new PageEntry

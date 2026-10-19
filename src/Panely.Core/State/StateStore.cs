@@ -27,6 +27,7 @@ public sealed class StateStore : IStateStore, IDisposable
     private readonly string _statePath;
     private readonly string _backupPath;
     private readonly object _gate = new();
+    private readonly object _writeGate = new();
     private readonly Timer _timer;
     private StateDocument _doc;
     private bool _dirty;
@@ -217,20 +218,25 @@ public sealed class StateStore : IStateStore, IDisposable
 
     public void Flush()
     {
-        string json;
-        lock (_gate)
+        // 디스크 쓰기(fsync 포함)는 _gate 밖에서 한다. 타이머 저장 중에도 UI 스레드의 상태 변경(쪽 넘길 때마다 위치 기록)이
+        // 쓰기를 기다리지 않게. _writeGate가 직렬화와 쓰기를 한 단위로 묶어 오래된 내용이 새 내용을 덮지 않는다.
+        lock (_writeGate)
         {
-            _timerArmed = false;
-            if (!_dirty || IsReadOnly) return;
-            json = JsonSerializer.Serialize(_doc, StateJson.Options);
-            _dirty = false;
+            string json;
+            lock (_gate)
+            {
+                _timerArmed = false;
+                if (!_dirty || IsReadOnly) return;
+                json = JsonSerializer.Serialize(_doc, StateJson.Options);
+                _dirty = false;
+            }
             try
             {
                 WriteAtomic(json);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                _dirty = true;
+                lock (_gate) _dirty = true;
                 _diagnostics.Log(LogLevel.Error, LogCategory.Persistence, $"State write failed: {ex.GetType().Name}");
             }
         }

@@ -47,23 +47,41 @@ public sealed class PageDecoder : IPageDecoder
     private static BitmapSource DecodeWic(byte[] bytes, int? maxPixelWidth)
     {
         using var stream = new MemoryStream(bytes, writable: false);
-        var decoder = BitmapDecoder.Create(stream, BitmapCreateOptions.PreservePixelFormat | BitmapCreateOptions.IgnoreColorProfile, BitmapCacheOption.OnLoad);
+        // None: 여기서는 헤더·메타데이터만 읽고, 픽셀은 Finalize의 CachedBitmap이 한 번에 끌어온다
+        // (OnLoad면 전체 크기 decode 버퍼를 하나 더 만든 뒤 다시 복사한다).
+        var decoder = BitmapDecoder.Create(stream, BitmapCreateOptions.PreservePixelFormat | BitmapCreateOptions.IgnoreColorProfile, BitmapCacheOption.None);
         if (decoder.Frames.Count == 0) throw new NotSupportedException("No frames.");
-        BitmapSource frame = decoder.Frames[0];
-        var orientation = ReadOrientation(decoder.Frames[0]);
+        var first = decoder.Frames[0];
+        BitmapSource frame = first;
+        var orientation = ReadOrientation(first);
 
         if (maxPixelWidth is { } maxW && maxW > 0)
         {
-            var orientedWidth = orientation >= 5 ? frame.PixelHeight : frame.PixelWidth;
-            if (orientedWidth > maxW)
-            {
-                var s = maxW / (double)orientedWidth;
-                frame = new TransformedBitmap(frame, new ScaleTransform(s, s));
-            }
+            var rotated = orientation >= 5;
+            var orientedWidth = rotated ? first.PixelHeight : first.PixelWidth;
+            if (orientedWidth > maxW) frame = DecodeScaled(bytes, rotated, maxW);
         }
 
         frame = ApplyOrientation(frame, orientation);
         return Finalize(frame);
+    }
+
+    /// <summary>
+    /// 줄인 크기로 decode(썸네일). WIC가 decode 단계에서 줄이므로(JPEG는 DCT 축소) 전체 decode 후 줄이는 것보다 훨씬 빠르다.
+    /// 회전 전 픽셀 기준이라 90° 회전 이미지는 높이를 맞춘다.
+    /// </summary>
+    private static BitmapSource DecodeScaled(byte[] bytes, bool rotated, int maxWidth)
+    {
+        using var stream = new MemoryStream(bytes, writable: false);
+        var image = new BitmapImage();
+        image.BeginInit();
+        image.StreamSource = stream;
+        image.CreateOptions = BitmapCreateOptions.IgnoreColorProfile;
+        image.CacheOption = BitmapCacheOption.OnLoad;
+        if (rotated) image.DecodePixelHeight = maxWidth;
+        else image.DecodePixelWidth = maxWidth;
+        image.EndInit();
+        return image;
     }
 
     private static BitmapSource Finalize(BitmapSource source)

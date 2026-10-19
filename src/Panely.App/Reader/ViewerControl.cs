@@ -202,14 +202,20 @@ public sealed class ViewerControl : FrameworkElement
         var n = _session.PageCount;
         var priority = new List<int>();
         priority.AddRange(spread.Indices());
-        // 인접 ±2쪽 프리로드(앞쪽 우선)
-        for (var d = 1; d <= 2; d++)
-        {
-            if (spread.End - 1 + d < n) priority.Add(spread.End - 1 + d);
-            if (spread.Start - d >= 0) priority.Add(spread.Start - d);
-        }
+        AddNeighbors(priority, spread, n);
         var keep = new PageRange(Math.Max(0, spread.Start - 10), Math.Min(n, spread.End + 10));
         _cache.Request(priority, keep);
+    }
+
+    /// <summary>인접 프리로드: 읽는 방향으로 4쪽(두 쪽 보기면 두 펼침), 뒤로 2쪽. 가까운 쪽·앞쪽 우선.</summary>
+    private static void AddNeighbors(List<int> priority, PageRange range, int n)
+    {
+        const int Ahead = 4, Behind = 2;
+        for (var d = 1; d <= Ahead; d++)
+        {
+            if (range.End - 1 + d < n) priority.Add(range.End - 1 + d);
+            if (d <= Behind && range.Start - d >= 0) priority.Add(range.Start - d);
+        }
     }
 
     private void RequestVerticalImages(bool initial)
@@ -232,11 +238,7 @@ public sealed class ViewerControl : FrameworkElement
         else
         {
             priority.AddRange(_verticalVisible.Indices());
-            for (var d = 1; d <= 2; d++)
-            {
-                if (_verticalVisible.End - 1 + d < n) priority.Add(_verticalVisible.End - 1 + d);
-                if (_verticalVisible.Start - d >= 0) priority.Add(_verticalVisible.Start - d);
-            }
+            AddNeighbors(priority, _verticalVisible, n);
             keep = new PageRange(Math.Max(0, _verticalVisible.Start - 10), Math.Min(n, _verticalVisible.End + 10));
         }
         _cache.Request(priority, keep);

@@ -4,8 +4,11 @@ using Panely.Domain.Library;
 
 namespace Panely.Core.Sources;
 
-/// <summary>폴더 분석 결과: 직접 이미지 존재 여부와 자연정렬한 하위 폴더+아카이브.</summary>
-public sealed record FolderAnalysis(string Path, IReadOnlyList<string> Images, IReadOnlyList<string> Children)
+/// <summary>
+/// 폴더 분석 결과: 직접 이미지 존재 여부와 자연정렬한 하위 폴더+아카이브.
+/// Images는 열거할 때 받은 FileInfo라 크기·수정 시각을 파일마다 다시 조회하지 않는다.
+/// </summary>
+public sealed record FolderAnalysis(string Path, IReadOnlyList<FileInfo> Images, IReadOnlyList<string> Children)
 {
     public bool HasDirectImages => Images.Count > 0;
 }
@@ -30,7 +33,7 @@ public static class FolderAnalyzer
     public static FolderAnalysis Analyze(string folder)
     {
         var dir = new DirectoryInfo(folder);
-        var images = new List<string>();
+        var images = new List<FileInfo>();
         var children = new List<string>();
         foreach (var info in dir.EnumerateFileSystemInfos())
         {
@@ -42,7 +45,7 @@ public static class FolderAnalyzer
             }
             else if (SupportedFormats.IsImage(info.Name))
             {
-                images.Add(info.FullName);
+                images.Add((FileInfo)info);
             }
             else if (SupportedFormats.IsArchive(info.Name))
             {
@@ -50,7 +53,7 @@ public static class FolderAnalyzer
             }
         }
         var cmp = Comparer;
-        images.Sort((a, b) => cmp.Compare(Path.GetFileName(a), Path.GetFileName(b)));
+        images.Sort((a, b) => cmp.Compare(a.Name, b.Name));
         children.Sort((a, b) => cmp.Compare(Path.GetFileName(a), Path.GetFileName(b)));
         return new FolderAnalysis(folder, images, children);
     }
@@ -77,7 +80,11 @@ public static class FolderAnalyzer
         bool IsArchive,
         IReadOnlyList<string>? SeriesEntries,
         string? SeriesDirectory,
-        string? SeriesEntry);
+        string? SeriesEntry)
+    {
+        /// <summary>폴더 책이면 그 폴더의 분석 결과(다시 열거하지 않게).</summary>
+        public FolderAnalysis? BookAnalysis { get; init; }
+    }
 
     /// <summary>
     /// 직접 이미지가 있으면 그 폴더가 책. 없으면 첫 하위 항목으로 내려가며 반복.
@@ -96,7 +103,7 @@ public static class FolderAnalyzer
             if (!visited.Add(CanonicalDirectory(current)))
                 throw new BookOpenException(OpenErrorKind.Empty, Loc.T("Folder is empty or has no supported content"));
             var analysis = Analyze(current);
-            if (analysis.HasDirectImages) return new Resolution(current, false, series, seriesDir, seriesEntry);
+            if (analysis.HasDirectImages) return new Resolution(current, false, series, seriesDir, seriesEntry) { BookAnalysis = analysis };
             if (analysis.Children.Count == 0)
                 throw new BookOpenException(OpenErrorKind.Empty, Loc.T("Folder is empty or has no supported content"));
             var first = analysis.Children[0];
