@@ -78,8 +78,10 @@ internal sealed class FakeRecognizer : ITextRecognizer
     public int Calls;
     public Func<PagePixels, string, IReadOnlyList<TextRegion>>? Produce { get; set; }
     public TimeSpan Delay { get; set; }
+    /// <summary>Languages에 없는 언어의 상태(기본: 사용 불가). 팩을 받을 수 있는 상태를 흉내 내려면 Supported로 둔다.</summary>
+    public Capability Missing { get; set; } = Capability.Unavailable("no ocr");
 
-    public Capability GetCapability(string language) => Languages.Contains(language) ? Capability.Ready : Capability.Unavailable("no ocr");
+    public Capability GetCapability(string language) => Languages.Contains(language) ? Capability.Ready : Missing;
 
     public async Task<IReadOnlyList<TextRegion>> RecognizeAsync(PagePixels image, string language, IReadOnlyList<RectD>? regions, CancellationToken cancellationToken)
     {
@@ -104,7 +106,9 @@ internal sealed class FakePacks(Func<Capability>? capability = null) : ILanguage
     public Capability GetCapability(string source, string target) => capability?.Invoke() ?? Capability.Ready;
     public IReadOnlyList<string> MissingPacks(string source, string target) => [];
     public Task InstallAsync(string packId, IProgress<InstallProgress>? progress, CancellationToken cancellationToken) => Task.CompletedTask;
-    public event EventHandler? PacksChanged { add { } remove { } }
+    public event EventHandler? PacksChanged;
+    /// <summary>팩 설치가 끝난 것처럼 알린다.</summary>
+    public void RaiseChanged() => PacksChanged?.Invoke(this, EventArgs.Empty);
 }
 
 internal static class FakeProviders

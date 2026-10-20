@@ -70,12 +70,14 @@ internal sealed class TranslationPanel : Border
         root.Children.Add(BuildSourceSection(source, job));
 
         // 주요 버튼
-        var capability = source is null ? null : services.Providers.Packs.GetCapability(source, target);
+        // 원문 언어를 아직 모르면(자동 감지) 어떤 언어든 읽을 수 있는 팩 조합(일본어 글자 인식 포함)을 기준으로 받게 한다
+        var packSource = source ?? (target == TranslationLanguages.Japanese ? TranslationLanguages.Korean : TranslationLanguages.Japanese);
+        var capability = services.Providers.Packs.GetCapability(packSource, target);
         Button primary;
         if (job is { IsRunningOrQueued: true })
             primary = Ui.Button("❚❚  " + Loc.T("Pause Translating"), () => _f.PauseLanguage(target));
         else if (capability is { Status: CapabilityStatus.Supported })
-            primary = Ui.Button(Loc.T("Download Language Pack…"), () => _ = DownloadAsync(source!, target));
+            primary = Ui.Button(Loc.T("Download Language Pack…"), () => _ = DownloadAsync(packSource, target));
         else if (capability is { Status: CapabilityStatus.Downloading })
         {
             primary = Ui.Button(Loc.T("Downloading Language Pack…"), () => { });
@@ -103,17 +105,20 @@ internal sealed class TranslationPanel : Border
         root.Children.Add(Spaced(primary, 12));
         _initialFocus = primary;
 
-        // 팩 상태·진행
+        // 팩 상태·진행(여러 팩을 받을 때는 지금 받는 팩과 전체 바이트)
         if (capability is { } cap)
         {
+            var download = cap.Status == CapabilityStatus.Downloading ? services.Providers.Packs.DownloadStatus : null;
             var status = cap.Status switch
             {
                 CapabilityStatus.Installed => Loc.T("Language pack installed"),
+                CapabilityStatus.Downloading when download is { } d => DownloadText(d),
                 CapabilityStatus.Downloading => Loc.T("Downloading…"),
+                CapabilityStatus.Supported when source is null => Loc.T("Download the language pack to read this book. Its language is detected after that."),
                 _ => cap.Reason ?? Loc.T("Language pack not installed"),
             };
             root.Children.Add(Spaced(Ui.Caption(status), 6));
-            if (cap.Status == CapabilityStatus.Downloading) root.Children.Add(Ui.Progress(cap.Progress ?? 0));
+            if (cap.Status == CapabilityStatus.Downloading) root.Children.Add(Ui.Progress(download?.Fraction ?? cap.Progress ?? 0));
         }
         // 감지 실패 안내는 위 원문 언어 칸에 이미 보인다
         var shownAbove = job is { Reason: TranslationStopReason.CouldNotDetectLanguage }
@@ -350,10 +355,9 @@ internal sealed class TranslationPanel : Border
     private async Task DownloadAsync(string source, string target)
     {
         var packs = _f.Service.Providers.Packs;
-        var missing = packs.MissingPacks(source, target);
         try
         {
-            foreach (var pack in missing) await packs.InstallAsync(pack, null, CancellationToken.None);
+            await packs.InstallMissingAsync(source, target, CancellationToken.None);
             _f.StartLanguage(target, switchVisible: true);
         }
         catch (Exception ex)
@@ -362,6 +366,10 @@ internal sealed class TranslationPanel : Border
         }
         _f.RequestStateRefresh();
     }
+
+    /// <summary>"번역 (Gemma 4 E2B) 받는 중 · 1.2 GB / 3.4 GB"</summary>
+    internal static string DownloadText(PackDownloadStatus d) =>
+        Loc.T("Downloading %@ · %@ of %@", ExperimentalSettingsView.PackTitle(d.CurrentPackId), JobsWindow.FormatBytes(d.BytesDone), JobsWindow.FormatBytes(d.BytesTotal));
 
     private static FrameworkElement? FindByName(DependencyObject root, string name)
     {

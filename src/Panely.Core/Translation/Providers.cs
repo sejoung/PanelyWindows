@@ -34,7 +34,22 @@ public interface ILanguagePackProvider
     /// <summary>임시 파일 → checksum 검증 → publish. 검증되지 않은 manifest는 설치를 거부한다.</summary>
     Task InstallAsync(string packId, IProgress<InstallProgress>? progress, CancellationToken cancellationToken);
 
+    /// <summary>이 언어쌍에 필요한 팩을 모두 차례로 받는다. 받는 동안은 팩 사이에도 다운로드 중으로 보인다.</summary>
+    async Task InstallMissingAsync(string source, string target, CancellationToken cancellationToken)
+    {
+        foreach (var pack in MissingPacks(source, target)) await InstallAsync(pack, null, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>지금 받는 중인 팩과 전체 진행(받는 중이 아니면 null).</summary>
+    PackDownloadStatus? DownloadStatus => null;
+
     event EventHandler? PacksChanged;
+}
+
+/// <summary>언어팩 다운로드 진행. 여러 팩을 받을 때 바이트는 전체 기준이다.</summary>
+public sealed record PackDownloadStatus(string CurrentPackId, long BytesDone, long BytesTotal)
+{
+    public double Fraction => BytesTotal > 0 ? Math.Clamp(BytesDone / (double)BytesTotal, 0, 1) : 0;
 }
 
 /// <summary>회전 보정된 BGRA32 픽셀(좌상단 원점). 큰 bitmap을 UI 상태에 보관하지 않는다.</summary>

@@ -150,8 +150,8 @@ internal sealed class ExperimentalSettingsView : UserControl
         return m.IsVerified ? Loc.T("Language pack not installed") : Loc.T("Not available in this build: the model isn't bundled or verified yet.");
     }
 
-    /// <summary>팩 ID 대신 쓰임새를 보여 준다.</summary>
-    private static string PackTitle(string id) => id switch
+    /// <summary>팩 ID 대신 쓰임새를 보여 준다(번역 패널·진행 표시도 쓴다).</summary>
+    internal static string PackTitle(string id) => id switch
     {
         ModelCatalog.DetectorId => Loc.T("Balloon detection (RT-DETR)"),
         ModelCatalog.MangaOcrId => Loc.T("Japanese text recognition (manga-ocr)"),

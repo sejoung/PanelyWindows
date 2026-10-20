@@ -46,7 +46,43 @@ public sealed class TranslationScheduler : IAsyncDisposable
         _diagnostics = diagnostics;
         _analyzer = new PageAnalyzer(providers.Recognizer, providers.Detector);
         _cache.Cleared += (_, _) => StopAll();
+        // 언어팩을 받으면(번역 패널·설정 어디서든) 팩이 없어 멈춘 작업을 다시 돌린다. 재시작하지 않아도 번역이 이어진다.
+        providers.Packs.PacksChanged += (_, _) => ResumeJobsWaitingForPacks();
         _loop = Task.Run(RunLoopAsync);
+    }
+
+    /// <summary>"언어팩 필요"로 멈춘 작업 중 이제 필요한 팩이 다 있는 것을 대기열에 다시 넣는다(사용자가 멈춘 작업은 그대로).</summary>
+    private void ResumeJobsWaitingForPacks()
+    {
+        var changed = new List<TranslationJobInfo>();
+        lock (_gate)
+        {
+            foreach (var job in _jobs.Values)
+            {
+                if (job.Phase != TranslationPhase.Paused || job.Reason != TranslationStopReason.NeedsLanguageDownload || job.UserPaused || job.AutoPaused) continue;
+                var ready = job.Source is { } source ? _providers.Packs.GetCapability(source, job.Target).IsReady : DetectionWaitingForPacks() is null;
+                if (!ready) continue;
+                job.Phase = TranslationPhase.Queued;
+                job.Reason = TranslationStopReason.None;
+                job.ReasonMessage = null;
+                changed.Add(Snapshot(job));
+            }
+        }
+        if (changed.Count == 0) return;
+        foreach (var c in changed) Raise(c);
+        _signal.Release();
+    }
+
+    /// <summary>
+    /// 원문 언어를 감지하려면 글자 인식 팩이 있어야 한다. 읽을 수 있는 언어가 하나도 없고 받을 수 있는 팩이 있으면 그 상태를 돌려준다
+    /// (감지 실패가 아니라 "언어팩 필요"로 멈추게).
+    /// </summary>
+    private Capability? DetectionWaitingForPacks()
+    {
+        if (_providers.Recognizer is ILanguageIdentifier { CanIdentify: true }) return null;
+        var capabilities = TranslationLanguages.All.Select(_providers.Recognizer.GetCapability).ToList();
+        if (capabilities.Any(c => c.IsReady)) return null;
+        return capabilities.FirstOrDefault(c => c.Status is CapabilityStatus.Supported or CapabilityStatus.Downloading);
     }
 
     public event EventHandler<TranslationJobInfo>? JobChanged;
@@ -363,6 +399,16 @@ public sealed class TranslationScheduler : IAsyncDisposable
 
         if (job.Source is null)
         {
+            if (DetectionWaitingForPacks() is not null)
+            {
+                Update(job, j =>
+                {
+                    j.Phase = TranslationPhase.Paused;
+                    j.Reason = TranslationStopReason.NeedsLanguageDownload;
+                    j.ReasonMessage = Loc.T("Download the language pack to read this book. Its language is detected after that.");
+                });
+                return;
+            }
             Update(job, j => j.Phase = TranslationPhase.DetectingLanguage);
             var (detected, readable) = await DetectSourceAsync(book, job.FocusPage, ct).ConfigureAwait(false);
             if (detected is null)

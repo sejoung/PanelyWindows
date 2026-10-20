@@ -1,5 +1,17 @@
 {
   // 번역 기능의 Windows 전용 문구(원본 catalog에 없는 새 문장, macOS 조건 대체).
+  "Downloading %@ · %@ of %@": {
+    "en": "Downloading %@ · %@ of %@",
+    "ko": "%@ 받는 중 · %@ / %@"
+  },
+  "Downloading language packs · %@ of %@": {
+    "en": "Downloading language packs · %@ of %@",
+    "ko": "언어팩 받는 중 · %@ / %@"
+  },
+  "Download the language pack to read this book. Its language is detected after that.": {
+    "en": "Download the language pack to read this book. Its language is detected after that.",
+    "ko": "이 책을 읽으려면 언어팩을 받으세요. 책의 언어는 받은 뒤에 감지합니다."
+  },
   "Translation Model": {
     "en": "Translation Model",
     "ko": "번역 모델"

@@ -397,6 +397,10 @@ Translation packs from earlier versions (Fast and Accurate, M2M100) are no longe
 
 <p align="center"><img src="images/manual/settings-packs-en.png" alt="The language pack list in Settings" width="560"></p>
 
+While they download, the translation panel shows the pack being downloaded and the overall size (for example "Downloading Translation (Gemma 4 E2B) · 1.1 GB of 3.1 GB") with a progress bar. If you close the panel, "Downloading language packs · 1.1 GB of 3.1 GB" shows at the bottom of the viewer. On the development PC the translation pack (3.1 GB) took about 2 minutes; it depends on your connection.
+
+A translation that was waiting for language packs continues by itself once they're downloaded, without restarting Panely, whether you downloaded them from the translation panel or from Settings.
+
 Language packs are stored in `%LOCALAPPDATA%\Panely\Models`. Once they're installed, translation works offline.
 
 > [!NOTE]
@@ -410,7 +414,7 @@ Click the toolbar's **Choose Language** button (a language name with ▾) and ch
 
 1. **Book's language**: the language the book is written in.
    - With **Detect Automatically**, Panely reads up to 15 pages from the current page when translation starts, and remembers the result for the series.
-   - The first time, choose the language yourself. Automatic detection may not work before the language packs are installed.
+   - Without the language packs the language can't be detected, so **Download Language Pack…** appears first. After the download, detection continues from there.
 2. **Target language**: the language saved for the series. If there isn't one, Panely uses **Translate Into by Default**, and then the app language.
    - To translate into another language, use **Choose Language › Translate into Another Language**, or the panel's **Translate into Another Language** link.
 3. Click **Translate This Book into Korean** (or whichever language). If packs are missing, **Download Language Pack…** appears here instead.
@@ -706,7 +710,6 @@ These come from this release and the [implementation status](IMPLEMENTATION-STAT
 - In narration boxes that the text nearly fills, the translation patch may be drawn semi-transparent, so the original faintly shows through.
 - Translation jobs in progress are lost when you quit. Finished pages are kept.
 - Language pack downloads can't be cancelled, and the app can't delete a language pack.
-- A full in-app download of a large pack was checked with the earlier version's 2.3 GB pack. The translation model pack (3.1 GB) was checked by downloading the same file directly, verifying its checksum and placing it in the install folder.
 - Not every action in Edit Balloons (such as drag-to-add) and in the AI chat window has been checked by hand.
 - Until you click **Save as Text File…**, the AI chat prompt shows a balloon count of 0. Save the file first, then copy the prompt.
 - Series auto-translate and Translate Entire Series skip volumes that are archives inside an archive. For such a book, translation pauses when you open another book.

@@ -175,6 +175,9 @@ public sealed partial class TranslationFeature
         var lines = new List<(string Text, double? Fraction)>();
         if (IsEnabled)
         {
+            // 언어팩 다운로드: 패널을 닫아도 진행이 보이게 한다
+            if (Service.Providers.Packs.DownloadStatus is { } download)
+                lines.Add((Loc.T("Downloading language packs · %@ of %@", JobsWindow.FormatBytes(download.BytesDone), JobsWindow.FormatBytes(download.BytesTotal)), download.Fraction));
             var jobs = Service.Scheduler.Jobs;
             var current = _book is null ? [] : jobs.Where(j => j.Book.BookKey == _book.BookKey).ToList();
             var primary = current.FirstOrDefault(j => j.Target == (_visible ?? PreferredTarget())) ?? current.FirstOrDefault(j => j.IsRunningOrQueued);

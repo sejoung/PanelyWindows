@@ -183,6 +183,10 @@ public sealed class LanguagePackManager : ILanguagePackProvider
     private readonly ModelStore _store;
     private readonly ITextRecognizer _recognizer;
     private readonly ITranslator _translator;
+    private readonly object _gate = new();
+    /// <summary>InstallMissingAsync가 받는 팩 묶음(시작할 때 설치되지 않았던 것). 받는 중이 아니면 null.</summary>
+    private IReadOnlyList<string>? _session;
+    private Task? _sessionTask;
 
     public LanguagePackManager(ModelStore store, ITextRecognizer recognizer, ITranslator translator)
     {
@@ -192,10 +196,72 @@ public sealed class LanguagePackManager : ILanguagePackProvider
 
     public event EventHandler? PacksChanged;
 
+    /// <summary>
+    /// 필요한 팩을 하나의 다운로드로 묶어 차례로 받는다. 받는 동안은 팩 사이에도 다운로드 중으로 보이고(버튼이 다시 눌리지 않게),
+    /// 이미 받는 중이면 그 작업을 돌려준다.
+    /// </summary>
+    public Task InstallMissingAsync(string source, string target, CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            if (_sessionTask is { IsCompleted: false }) return _sessionTask;
+            var missing = MissingPacks(source, target);
+            if (missing.Count == 0) return Task.CompletedTask;
+            _session = missing;
+            _sessionTask = RunSessionAsync(missing, cancellationToken);
+            return _sessionTask;
+        }
+    }
+
+    private async Task RunSessionAsync(IReadOnlyList<string> packs, CancellationToken cancellationToken)
+    {
+        try
+        {
+            foreach (var id in packs)
+            {
+                // 설정 화면에서 같은 팩을 따로 받고 있으면 끝나기를 기다린다
+                while (_store.DownloadProgress(id) is not null) await Task.Delay(500, cancellationToken).ConfigureAwait(false);
+                if (!_store.IsInstalled(id)) await _store.InstallAsync(id, null, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            lock (_gate) _session = null;
+            PacksChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    /// <summary>받는 중인 팩 묶음의 전체 진행. 묶음이 없으면 설정에서 따로 받는 팩의 진행.</summary>
+    public PackDownloadStatus? DownloadStatus
+    {
+        get
+        {
+            IReadOnlyList<string>? packs;
+            lock (_gate) packs = _session;
+            packs ??= _store.Manifests.Where(m => _store.DownloadProgress(m.Id) is not null).Select(m => m.Id).ToList();
+            if (packs.Count == 0) return null;
+            long done = 0, total = 0;
+            string? downloading = null, pending = null;
+            foreach (var id in packs)
+            {
+                if (_store.Find(id) is not { } m) continue;
+                total += m.TotalBytes;
+                if (_store.IsInstalled(m)) done += m.TotalBytes;
+                else if (_store.DownloadProgress(id) is { } p) { done += (long)(p * m.TotalBytes); downloading ??= id; }
+                else pending ??= id;
+            }
+            return (downloading ?? pending) is { } current ? new PackDownloadStatus(current, done, total) : null;
+        }
+    }
+
     public Capability GetCapability(string source, string target)
     {
         if (source == target || !TranslationLanguages.IsSupported(source) || !TranslationLanguages.IsSupported(target))
             return Capability.Unavailable(Loc.T("This language pair isn't supported"));
+        // 팩 묶음을 받는 중이면 팩 사이에도 다운로드 중이다(진행은 전체 바이트 기준)
+        bool inSession;
+        lock (_gate) inSession = _session is { } s && s.Intersect(RequiredPacks(source)).Any();
+        if (inSession && DownloadStatus is { } status) return new Capability(CapabilityStatus.Downloading, null, status.Fraction);
         // 필요한 팩 중 받는 중인 것이 있으면 먼저 알린다. 번역·탐지 팩은 글자 인식 팩보다 먼저 받으므로
         // 글자 인식 상태부터 보면 그동안 패널이 다운로드 중으로 보이지 않는다.
         foreach (var id in RequiredPacks(source))

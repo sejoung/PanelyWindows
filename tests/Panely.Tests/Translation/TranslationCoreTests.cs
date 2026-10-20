@@ -257,6 +257,59 @@ public class ModelManifestTests
         Assert.NotEqual(CapabilityStatus.Downloading, packs.GetCapability("en", "ko").Status);
     }
 
+    [Fact]
+    public async Task InstallMissingShowsOneDownloadAcrossPacksAndDoesNotStartTwice()
+    {
+        using var dir = new TempDir();
+        byte[] translatorPayload = new byte[3000], detectorPayload = new byte[1000];
+        var translatorGate = new TaskCompletionSource();
+        var detectorGate = new TaskCompletionSource();
+        ModelManifest Manifest(string id, string file, byte[] payload) => PackManifest(id, payload) with
+        {
+            Files = [new ModelFile { Name = file, Bytes = payload.Length, Sha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(payload)) }],
+        };
+        var handler = new PerFileHandler(new()
+        {
+            ["translator.gguf"] = (translatorPayload, translatorGate.Task),
+            ["detector.onnx"] = (detectorPayload, detectorGate.Task),
+        });
+        var store = new ModelStore(dir.Path, () => new HttpClient(handler),
+            [Manifest(ModelCatalog.TranslatorId, "translator.gguf", translatorPayload), Manifest(ModelCatalog.DetectorId, "detector.onnx", detectorPayload)]);
+        var recognizer = new FakeRecognizer();
+        recognizer.Languages.Clear();
+        var packs = new LanguagePackManager(store, recognizer, new PseudoTranslator { Delay = TimeSpan.Zero });
+
+        var install = packs.InstallMissingAsync("en", "ko", CancellationToken.None);
+        Assert.Same(install, packs.InstallMissingAsync("en", "ko", CancellationToken.None));
+        Assert.Equal(CapabilityStatus.Downloading, packs.GetCapability("en", "ko").Status);
+        var first = packs.DownloadStatus!;
+        Assert.Equal(ModelCatalog.TranslatorId, first.CurrentPackId);
+        Assert.Equal(4000, first.BytesTotal);
+
+        // 첫 팩이 끝나고 다음 팩을 받기 전에도 다운로드 중이고, 진행은 전체 기준이라 뒤로 가지 않는다
+        translatorGate.SetResult();
+        await Wait.UntilAsync(() => store.IsInstalled(ModelCatalog.TranslatorId));
+        Assert.Equal(CapabilityStatus.Downloading, packs.GetCapability("en", "ko").Status);
+        var second = packs.DownloadStatus!;
+        Assert.Equal(ModelCatalog.DetectorId, second.CurrentPackId);
+        Assert.True(second.BytesDone >= 3000, $"{second.BytesDone}");
+
+        detectorGate.SetResult();
+        await install;
+        Assert.Null(packs.DownloadStatus);
+        Assert.NotEqual(CapabilityStatus.Downloading, packs.GetCapability("en", "ko").Status);
+    }
+
+    private sealed class PerFileHandler(Dictionary<string, (byte[] Payload, Task Gate)> files) : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var (payload, gate) = files[Path.GetFileName(request.RequestUri!.AbsolutePath)];
+            await gate.ConfigureAwait(false);
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new ByteArrayContent(payload) };
+        }
+    }
+
     private sealed class GatedHandler(byte[] payload, Task gate) : HttpMessageHandler
     {
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -475,6 +528,52 @@ public class TranslationSchedulerTests
         var info = scheduler.Get(book.BookKey, "ko")!;
         Assert.Equal(TranslationStopReason.NeedsLanguageDownload, info.Reason);
         Assert.False(info.UserPaused);
+    }
+
+    [Fact]
+    public async Task JobWaitingForLanguagePackResumesWhenPacksAreInstalled()
+    {
+        // 설정 화면 등 어디서 받든, 팩이 생기면 앱을 다시 시작하지 않아도 멈춘 작업이 이어진다
+        using var dir = new TempDir();
+        var ready = false;
+        var packs = new FakePacks(() => ready ? Capability.Ready : new Capability(CapabilityStatus.Supported, "download"));
+        var providers = new TranslationProviders { Recognizer = new FakeRecognizer(), Detector = new FakeDetector(), Translator = new PseudoTranslator { Delay = TimeSpan.Zero }, Packs = packs };
+        var book = FakeBooks.Create(2);
+        await using var scheduler = new TranslationScheduler(providers, new TranslationCache(dir.Path), new FakePixels(), new FakeBookAccess(() => FakeBooks.Create(2)));
+        scheduler.Start(BookTarget.From(book), "ko", "ja", TranslationScope.Page);
+        await Wait.UntilAsync(() => scheduler.Get(book.BookKey, "ko") is { Phase: TranslationPhase.Paused, Reason: TranslationStopReason.NeedsLanguageDownload });
+
+        packs.RaiseChanged(); // 아직 받는 중: 그대로 멈춰 있다
+        await Task.Delay(100);
+        Assert.Equal(TranslationPhase.Paused, scheduler.Get(book.BookKey, "ko")!.Phase);
+
+        ready = true;
+        packs.RaiseChanged();
+        await Wait.UntilAsync(() => scheduler.Get(book.BookKey, "ko")?.Phase is TranslationPhase.Completed or TranslationPhase.Failed);
+        Assert.Equal(TranslationPhase.Completed, scheduler.Get(book.BookKey, "ko")!.Phase);
+    }
+
+    [Fact]
+    public async Task AutoDetectWithoutTextRecognitionWaitsForPacksInsteadOfFailing()
+    {
+        // 글자 인식 팩이 없으면 감지 실패(Windows OCR 안내)가 아니라 "언어팩 필요"로 멈추고, 받은 뒤 감지부터 이어 간다
+        using var dir = new TempDir();
+        var recognizer = new FakeRecognizer { Missing = new Capability(CapabilityStatus.Supported, "download") };
+        recognizer.Languages.Clear();
+        var packs = new FakePacks();
+        var providers = new TranslationProviders { Recognizer = recognizer, Detector = new FakeDetector(), Translator = new PseudoTranslator { Delay = TimeSpan.Zero }, Packs = packs };
+        var book = FakeBooks.Create(2);
+        await using var scheduler = new TranslationScheduler(providers, new TranslationCache(dir.Path), new FakePixels(), new FakeBookAccess(() => FakeBooks.Create(2)));
+        scheduler.Start(BookTarget.From(book), "ko", null, TranslationScope.Page);
+        await Wait.UntilAsync(() => scheduler.Get(book.BookKey, "ko")?.Phase is TranslationPhase.Paused or TranslationPhase.Failed);
+        Assert.Equal(TranslationStopReason.NeedsLanguageDownload, scheduler.Get(book.BookKey, "ko")!.Reason);
+
+        foreach (var lang in new[] { "ja", "ko", "en" }) recognizer.Languages.Add(lang);
+        packs.RaiseChanged();
+        await Wait.UntilAsync(() => scheduler.Get(book.BookKey, "ko")?.Phase is TranslationPhase.Completed or TranslationPhase.Failed);
+        var info = scheduler.Get(book.BookKey, "ko")!;
+        Assert.Equal(TranslationPhase.Completed, info.Phase);
+        Assert.Equal("ja", info.Source);
     }
 
     [Fact]
