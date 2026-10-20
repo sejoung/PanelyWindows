@@ -4,13 +4,11 @@
   "source": "ja",
   "target": "ko",
   "scope": "page",
-  "mode": "fast",
   "providerRevision": "example-only-not-a-model",
   "analysisVersion": 1,
   "imageWidth": 720,
   "imageHeight": 1200,
   "isComplete": true,
-  "speechLevelChecked": false,
   "bubbles": [
     {
       "id": 0,

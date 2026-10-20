@@ -101,8 +101,8 @@ internal sealed class FakeDetector : IBalloonDetector
 
 internal sealed class FakePacks(Func<Capability>? capability = null) : ILanguagePackProvider
 {
-    public Capability GetCapability(string source, string target, TranslationMode mode) => capability?.Invoke() ?? Capability.Ready;
-    public IReadOnlyList<string> MissingPacks(string source, string target, TranslationMode mode) => [];
+    public Capability GetCapability(string source, string target) => capability?.Invoke() ?? Capability.Ready;
+    public IReadOnlyList<string> MissingPacks(string source, string target) => [];
     public Task InstallAsync(string packId, IProgress<InstallProgress>? progress, CancellationToken cancellationToken) => Task.CompletedTask;
     public event EventHandler? PacksChanged { add { } remove { } }
 }
@@ -114,7 +114,6 @@ internal static class FakeProviders
         Recognizer = recognizer ?? new FakeRecognizer(),
         Detector = new FakeDetector(),
         Translator = translator ?? new PseudoTranslator { Delay = TimeSpan.Zero },
-        SpeechLevel = new UnavailableSpeechLevelCorrector(),
         Packs = new FakePacks(packs),
     };
 }

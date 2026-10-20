@@ -149,7 +149,7 @@ internal sealed class AiChatSheet : SheetWindow
         for (var i = from; i <= to; i++)
         {
             var entry = _book.Pages[i];
-            var cached = _f.Service.Scheduler.LoadCached(entry.PageId, _source, _target, _scope, _f.StateStore.Settings.TranslationMode);
+            var cached = _f.Service.Scheduler.LoadCached(entry.PageId, _source, _target, _scope);
             var edits = _f.Service.Edits.Get(entry.PageId, _scope);
             if (cached is null && edits is null) continue;
             pages.Add((i, EditResolver.Resolve(cached?.Bubbles ?? [], edits, _target)));
@@ -246,7 +246,7 @@ internal sealed class AiChatSheet : SheetWindow
         {
             var entry = _snapshot.Find(id)!;
             var pageId = _book.Pages[entry.PageIndex].PageId;
-            var cached = _f.Service.Scheduler.LoadCached(pageId, _source, _target, _scope, _f.StateStore.Settings.TranslationMode);
+            var cached = _f.Service.Scheduler.LoadCached(pageId, _source, _target, _scope);
             var edits = _f.Service.Edits.Get(pageId, _scope) ?? PageEditsEditor.Empty(pageId, _scope);
             var bubble = EditResolver.Resolve(cached?.Bubbles ?? [], edits, _target).FirstOrDefault(b => b.Id == entry.BubbleId);
             if (bubble is null) continue;

@@ -71,8 +71,6 @@ public sealed partial class TranslationFeature : ITranslationFeature, IDisposabl
 
     private IStateStore State => _services.State;
 
-    private TranslationMode Mode => State.Settings.TranslationMode;
-
     private TranslationScope CurrentScope => _host?.Layout == ReadingLayout.Vertical ? TranslationScope.Strip : TranslationScope.Page;
 
     private bool ShowingTranslation => State.Settings.TranslationOverlayVisible && _visible is not null;
@@ -142,15 +140,14 @@ public sealed partial class TranslationFeature : ITranslationFeature, IDisposabl
         if (book is null || !IsEnabled) return;
         var epoch = _bookEpoch;
         var scope = CurrentScope;
-        var mode = Mode;
         var knownSource = _source;
         _ = Task.Run(() =>
         {
-            var source = knownSource ?? DiscoverSourceFromCache(book, scope, mode);
+            var source = knownSource ?? DiscoverSourceFromCache(book, scope);
             var counts = new Dictionary<string, HashSet<int>>();
             if (source is not null)
                 foreach (var lang in TranslationLanguages.All.Where(l => l != source))
-                    counts[lang] = Service.Scheduler.CachedPages(book.Pages, source, lang, scope, mode);
+                    counts[lang] = Service.Scheduler.CachedPages(book.Pages, source, lang, scope);
             return (source, counts);
         }).ContinueWith(t =>
         {
@@ -170,12 +167,12 @@ public sealed partial class TranslationFeature : ITranslationFeature, IDisposabl
         }, TaskScheduler.FromCurrentSynchronizationContext());
     }
 
-    private string? DiscoverSourceFromCache(OpenedBook book, TranslationScope scope, TranslationMode mode)
+    private string? DiscoverSourceFromCache(OpenedBook book, TranslationScope scope)
     {
         var probe = book.Pages.Take(3).ToList();
         foreach (var source in TranslationLanguages.All)
             foreach (var target in TranslationLanguages.All.Where(t => t != source))
-                if (Service.Scheduler.CachedPages(probe, source, target, scope, mode).Count > 0) return source;
+                if (Service.Scheduler.CachedPages(probe, source, target, scope).Count > 0) return source;
         return null;
     }
 
@@ -209,14 +206,13 @@ public sealed partial class TranslationFeature : ITranslationFeature, IDisposabl
         var target = _visible;
         var source = _source;
         var scope = CurrentScope;
-        var mode = Mode;
         var epoch = _bookEpoch;
         var wanted = Enumerable.Range(Math.Max(0, range.Start - 2), Math.Min(book.Pages.Count, range.End + 2) - Math.Max(0, range.Start - 2))
             .Where(i => !_pages.ContainsKey(i) && (_translated.Contains(i) || scope == TranslationScope.Strip)).ToList();
         // 먼 페이지 정리
         foreach (var far in _pages.Keys.Where(k => k < range.Start - 20 || k > range.End + 20).ToList()) _pages.Remove(far);
         if (wanted.Count == 0) { _host.InvalidateOverlay(); return; }
-        _ = Task.Run(() => wanted.Select(i => (i, Service.Scheduler.LoadCached(book.Pages[i].PageId, source, target, scope, mode))).ToList())
+        _ = Task.Run(() => wanted.Select(i => (i, Service.Scheduler.LoadCached(book.Pages[i].PageId, source, target, scope))).ToList())
             .ContinueWith(t =>
             {
                 if (t.IsFaulted || epoch != _bookEpoch || target != _visible) return;

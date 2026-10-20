@@ -31,7 +31,8 @@ This guide follows the order you'll use it in: install, open a book, read, and t
 
 - Windows 10 version 2004 (build 19041) or later. Windows 11 x64 is the primary target.
 - No separate .NET install is needed. The release ZIP includes the runtime.
-- Translation needs about 1 GB of disk space for language packs (see [section 6](#6-getting-started-with-translation)). Any DirectX 12 GPU speeds up balloon detection.
+- Translation needs about 3.5 GB of disk space for language packs (see [section 6](#6-getting-started-with-translation)).
+- Translation is much faster with a GPU. Panely uses any GPU with a Vulkan driver (most NVIDIA, AMD and Intel GPUs); without one it runs on the CPU and is slower (see [On a PC without a GPU](#on-a-pc-without-a-gpu)).
 
 ### Choosing the download
 
@@ -371,8 +372,7 @@ Open **File › Settings…** (`Ctrl+,`). On the **Experimental** tab, turn on t
 The other settings on this tab:
 
 - **Translate Into by Default**: the language new series are translated into. You can change it for each series.
-- **Translation Mode**: **Fast** or **Accurate**. **Accurate** uses about 2 GB more memory and runs a little slower, but its translations read much better in a side-by-side review. If your PC has the memory to spare, try **Accurate** (see below).
-- **Match Speech Level**: not available in this Windows build, so it's greyed out.
+- **Translation Model**: translation uses one model, Gemma 4 E2B. It translates a few balloons at a time together with the lines just before them, so it keeps each speaker's speech level and names. Once installed, the device it runs on (a Vulkan GPU name, or CPU) is shown too; the device is picked at the first translation.
 
 ### Step 2: Download the language packs
 
@@ -383,10 +383,11 @@ Translation needs the models (language packs) below. They're downloaded from pin
 | Balloon detection (RT-DETR) | 160.7 MB | Always |
 | Chinese, English and Korean text recognition, language detection (PP-OCRv5) | 40.9 MB | Always |
 | Japanese text recognition (manga-ocr) | 111.4 MB | Japanese books |
-| Translation — Fast (M2M100, int8) | 608.6 MB | **Fast** mode |
-| Translation — Accurate (M2M100, fp32) | 2.3 GB | **Accurate** mode |
+| Translation (Gemma 4 E2B) | 3.1 GB | Always |
 
-With **Fast**, the total is about 920 MB for Japanese books and about 810 MB for other languages.
+The total is about 3.4 GB for Japanese books and about 3.3 GB for other languages.
+
+Translation packs from earlier versions (Fast and Accurate, M2M100) are no longer used, so Panely deletes them when it starts.
 
 **Two ways to download**
 
@@ -421,6 +422,26 @@ Click the toolbar's **Choose Language** button (a language name with ▾) and ch
 - Translated balloons appear on the page as they're ready. Progress shows in the panel and in a progress pill at the bottom of the viewer; click the pill to open the Jobs window.
 - One job runs at a time. Jobs for other books wait their turn.
 - Finished pages get a check badge in the thumbnails.
+- When translation starts, the translation model gets ready while balloons are being found. On a GPU the first preparation takes about 20 seconds, but it overlaps balloon detection, so the first translation usually appears in about 10 seconds.
+
+### On a PC without a GPU
+
+The translation model runs on the GPU (Vulkan) when there is one, and on the CPU otherwise. On the CPU it is much slower.
+
+| Device | One balloon | 298-page webtoon (146 balloons), whole book | First translation shown |
+|---|---|---|---|
+| GPU (RTX 4070 Ti SUPER) | about 0.1 s | about 58 s | about 10 s |
+| CPU only (Core i7-13700K) | about 0.6 s | about 325 s (5 min 25 s) | about 15 s |
+
+- These were measured once on the development PC. Slower CPUs, fewer cores and laptop power-saving modes take longer.
+- Balloon detection and text recognition also run on the CPU then, so the number of pages matters as well as the number of balloons.
+- Panely runs on the CPU in these cases:
+  - the PC has no GPU
+  - an older GPU without a Vulkan driver
+  - Windows on ARM (this build has no ARM Vulkan binaries)
+  - the GPU was turned off with `PANELY_ORT_DEVICE=cpu`
+- **Settings › Experimental › Translation Model** shows which device is in use (after the first translation).
+- On the CPU, it's easier to let the book translate from the current page while you read than to translate many pages ahead. Translation always starts at the current page.
 
 ### Switching between original and translation
 
@@ -431,7 +452,7 @@ Click the toolbar's **Choose Language** button (a language name with ▾) and ch
 - Balloons the model couldn't translate keep their original text. Click one to see why.
 
 > [!NOTE]
-> Vertical Scroll keeps its translations separately from Single Page and Double Page, and **Fast** and **Accurate** also keep separate results. So after changing the layout or the mode, you may need to translate again for that combination.
+> Vertical Scroll keeps its translations separately from Single Page and Double Page, so after changing the layout you may need to translate again. Translations made by earlier versions (M2M100) aren't used, so books need translating again; your own edits are kept.
 
 ### Translating a whole series
 
@@ -479,7 +500,7 @@ Your edits are stored apart from the translation cache, so clearing the cache or
 
 ### Improving with an AI chat
 
-Translating balloon by balloon misses things like who's speaking, how they speak, and names. You can hand the whole book's dialogue to an AI chat you already use (ChatGPT, Claude, Gemini or another) as a text file.
+The translation model only sees the few lines just before each balloon, so it can miss relationships and names set up earlier in the book. You can hand the whole book's dialogue to an AI chat you already use (ChatGPT, Claude, Gemini or another) as a text file.
 
 Open **Choose Language › Improve with an AI Chat…**. It's also in the page's right-click menu and in the panel.
 
@@ -575,7 +596,7 @@ Open **File › Settings…** (`Ctrl+,`). Changes are saved right away. Press `E
 | **Library** | Reopen last folder on launch · Last opened folder and **Forget Now** · Refresh the file tree automatically |
 | **Storage** | Extraction cache size, clearable cache, cache limit (10 GB) · **Clear Cache** (the open book's cache is kept) |
 | **Diagnostics** | App version, build, Windows version · Log level · **Export Diagnostic Report…**, **Clear Logs**, **Open Logs Folder** |
-| **Experimental** | Translation Assist, default target language, Translation Mode, language packs, text recognition status, your edits, translation cache |
+| **Experimental** | Translation Assist, default target language, Translation Model (install status and device), language packs, text recognition status, GPU acceleration, your edits, translation cache |
 
 **Language**: **System Default** uses Korean if Windows' display language is Korean, and English otherwise.
 
@@ -666,7 +687,8 @@ Hover over a menu item or toolbar button to see its shortcut. Number keys are th
 | "Open with Panely" stopped working after moving the app folder | Click **Add to File Explorer** again in **Settings › General**. |
 | No translation button | Turn on **Settings › Experimental › Translation Assist**. |
 | "Couldn't tell which language this book is in." | Choose the language yourself under **Book's language** at the top of the translation panel. |
-| Translation fails or the app is unstable because of the GPU | Make Panely use the CPU only by setting this environment variable, then start Panely again: `setx PANELY_ORT_DEVICE cpu` |
+| Translation fails or the app is unstable because of the GPU | Make Panely use the CPU only by setting this environment variable, then start Panely again: `setx PANELY_ORT_DEVICE cpu`. Translation becomes several times slower ([On a PC without a GPU](#on-a-pc-without-a-gpu)). |
+| Translation is very slow | If **Settings › Experimental › Translation Model** shows CPU, the GPU isn't being used. Installing the latest graphics driver often makes Vulkan available. |
 
 When you report a problem, please attach a ZIP from **File › Export Diagnostic Report…**. [Open a new issue](https://github.com/sejoung/PanelyWindows/issues/new)
 
@@ -676,14 +698,14 @@ These come from this release and the [implementation status](IMPLEMENTATION-STAT
 
 **Translation**
 
-- Quality is limited by the small M2M100 model. Short lines and idioms are often wrong, and quality hasn't been checked against a reference (golden) set. manga-ocr also misreads text sometimes.
-- **Accurate** mode (fp32, 2.3 GB language pack) was measured once on a 298-page webtoon with 146 balloons: about 7 seconds slower than **Fast** for the whole book, and about 2 GB more memory at peak (5.8 GB vs 3.5 GB). It translated 115 of the 146 balloons differently from **Fast**, and in the developer's side-by-side review its translations were much better. That's one person's judgment, not a check against a reference set. If memory is tight, use **Fast**.
-- **Match Speech Level** isn't in the Windows build yet.
-- Chinese Simplified and Traditional aren't told apart (M2M100 has a single Chinese). Vertical Chinese text hasn't been measured.
+- The translation model (Gemma 4 E2B) is a small on-device model and makes mistakes. Quality hasn't been checked against a reference (golden) set; there is only the developer's side-by-side comparison with the earlier model. When text recognition such as manga-ocr misreads the original, the translation is wrong too.
+- Speech level is matched from the few lines just before each balloon, so it can be wrong after a scene change or for a speaker who appeared long before.
+- On a PC without a GPU, translation runs on the CPU and is several times slower ([On a PC without a GPU](#on-a-pc-without-a-gpu)). Translating uses several GB of memory (measured on the development PC: up to about 7.5 GB, including balloon detection).
+- Vertical Chinese text hasn't been measured.
 - In narration boxes that the text nearly fills, the translation patch may be drawn semi-transparent, so the original faintly shows through.
 - Translation jobs in progress are lost when you quit. Finished pages are kept.
 - Language pack downloads can't be cancelled, and the app can't delete a language pack.
-- In-app download has been run end to end for the **Accurate** pack (2.3 GB). The other packs were checked by downloading the same files directly into the install folder.
+- A full in-app download of a large pack was checked with the earlier version's 2.3 GB pack. The translation model pack (3.1 GB) was checked by downloading the same file directly, verifying its checksum and placing it in the install folder.
 - Not every action in Edit Balloons (such as drag-to-add) and in the AI chat window has been checked by hand.
 - Until you click **Save as Text File…**, the AI chat prompt shows a balloon count of 0. Save the file first, then copy the prompt.
 - Series auto-translate and Translate Entire Series skip volumes that are archives inside an archive. For such a book, translation pauses when you open another book.

@@ -9,10 +9,11 @@ internal sealed class ScriptedTranslator(Func<string, string?> translate) : ITra
 {
     public Func<string, bool> Fail { get; set; } = _ => false;
     public string Name => "scripted";
-    public string Revision(TranslationMode mode) => "scripted@1";
-    public Capability GetCapability(string source, string target, TranslationMode mode) => Capability.Ready;
+    public string Revision => "scripted@1";
+    public Capability GetCapability(string source, string target) => Capability.Ready;
 
-    public Task<IReadOnlyList<TranslationResultItem>> TranslateAsync(IReadOnlyList<TranslationRequestItem> items, string source, string target, TranslationMode mode, CancellationToken cancellationToken)
+    public Task<IReadOnlyList<TranslationResultItem>> TranslateAsync(IReadOnlyList<TranslationRequestItem> items, IReadOnlyList<TranslationContextLine> context,
+        string source, string target, CancellationToken cancellationToken)
         => Task.FromResult<IReadOnlyList<TranslationResultItem>>(items
             .Select(i => Fail(i.Text) ? new TranslationResultItem(i.Id, null, "model crashed") : new TranslationResultItem(i.Id, translate(i.Text)))
             .ToList());
@@ -41,7 +42,7 @@ public class UntranslatableBubbleTests
         await Wait.UntilAsync(() => scheduler.Get(book.BookKey, "ko")?.Phase is TranslationPhase.Completed or TranslationPhase.Failed);
 
         Assert.Equal(TranslationPhase.Completed, scheduler.Get(book.BookKey, "ko")!.Phase);
-        var page = scheduler.LoadCached(book.Pages[0].PageId, "ja", "ko", TranslationScope.Page, TranslationMode.Fast)!;
+        var page = scheduler.LoadCached(book.Pages[0].PageId, "ja", "ko", TranslationScope.Page)!;
         Assert.True(page.IsComplete);
         Assert.Null(page.Bubbles.Single(b => b.Source == "かしこまりました").Translation);
         Assert.Equal("안녕하세요", page.Bubbles.Single(b => b.Source == "こんにちは").Translation);
@@ -60,7 +61,7 @@ public class UntranslatableBubbleTests
         var info = scheduler.Get(book.BookKey, "ko")!;
         Assert.Equal(TranslationPhase.Failed, info.Phase);
         Assert.Equal("model crashed", info.ReasonMessage);
-        Assert.Null(scheduler.LoadCached(book.Pages[0].PageId, "ja", "ko", TranslationScope.Page, TranslationMode.Fast));
+        Assert.Null(scheduler.LoadCached(book.Pages[0].PageId, "ja", "ko", TranslationScope.Page));
     }
 
     [Fact]
@@ -81,16 +82,16 @@ public class UntranslatableBubbleTests
         scheduler.Start(BookTarget.From(book), "ko", "ja", TranslationScope.Strip);
         await Wait.UntilAsync(() => scheduler.Get(book.BookKey, "ko")?.Phase is TranslationPhase.Completed or TranslationPhase.Failed);
         Assert.Equal(TranslationPhase.Failed, scheduler.Get(book.BookKey, "ko")!.Phase);
-        Assert.Null(scheduler.LoadCached(book.Pages[4].PageId, "ja", "ko", TranslationScope.Strip, TranslationMode.Fast));
+        Assert.Null(scheduler.LoadCached(book.Pages[4].PageId, "ja", "ko", TranslationScope.Strip));
 
         translator.Fail = _ => false;
         scheduler.Start(BookTarget.From(book), "ko", "ja", TranslationScope.Strip);
         await Wait.UntilAsync(() => scheduler.Get(book.BookKey, "ko")?.Phase == TranslationPhase.Completed);
 
-        var page4 = scheduler.LoadCached(book.Pages[4].PageId, "ja", "ko", TranslationScope.Strip, TranslationMode.Fast)!;
+        var page4 = scheduler.LoadCached(book.Pages[4].PageId, "ja", "ko", TranslationScope.Strip)!;
         Assert.Equal("안녕히", Assert.Single(page4.Bubbles).Translation);
         // 이미 끝났던 쪽의 풍선이 다시 들어가 겹치지 않는다
-        var page3 = scheduler.LoadCached(book.Pages[3].PageId, "ja", "ko", TranslationScope.Strip, TranslationMode.Fast)!;
+        var page3 = scheduler.LoadCached(book.Pages[3].PageId, "ja", "ko", TranslationScope.Strip)!;
         Assert.Single(page3.Bubbles);
     }
 

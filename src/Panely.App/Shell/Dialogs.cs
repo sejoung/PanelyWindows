@@ -162,7 +162,7 @@ public sealed class AboutWindow : PanelyDialog
         AddSection(Loc.T("Third-party components"),
             "SharpCompress · MIT",
             "ONNX Runtime · MIT",
-            "Microsoft.ML.Tokenizers · MIT",
+            "LLamaSharp · llama.cpp · MIT",
             "Magick.NET · Apache-2.0");
 
         var ok = MakeButton(Loc.T("OK"), true);

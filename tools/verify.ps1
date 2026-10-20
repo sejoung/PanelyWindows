@@ -221,8 +221,13 @@ Invoke-Stage 'publish smoke' -Skip:($skipPublish -or -not $buildOk) -SkipReason 
     } finally {
         Remove-Item Env:PANELY_SMOKE_EXE -ErrorAction SilentlyContinue
     }
+    # 번역 모델 실행기(llama.cpp): 게시 RID의 Windows 네이티브만 있어야 하고(리눅스 Vulkan 56MB 등 제외), Vulkan GPU 백엔드가 있어야 한다
+    $llama = @(Get-ChildItem $out -Recurse -File -Include 'llama.dll', 'libllama.so', 'libllama.dylib', 'ggml*.dll', 'libggml*.so')
+    $foreign = @($llama | Where-Object { $_.FullName -notlike (Join-Path $out 'runtimes\win-x64\*') })
+    if ($foreign.Count -gt 0) { throw "게시본에 다른 플랫폼의 llama.cpp 네이티브가 있습니다: $($foreign[0].FullName.Substring($out.Length))" }
+    if (-not (Test-Path (Join-Path $out 'runtimes\win-x64\native\vulkan\llama.dll'))) { throw '게시본에 Vulkan llama.cpp 백엔드가 없습니다.' }
     $mb = [math]::Round(((Get-ChildItem $out -Recurse -File | Measure-Object Length -Sum).Sum) / 1MB, 0)
-    "self-contained 게시본 ${mb}MB로 smoke 통과"
+    "self-contained 게시본 ${mb}MB로 smoke 통과(llama.cpp win-x64 네이티브 확인)"
 }
 
 # ── 요약 ─────────────────────────────────────────────────

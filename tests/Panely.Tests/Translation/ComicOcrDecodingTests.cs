@@ -130,15 +130,6 @@ public class ComicOcrDecodingTests
         Assert.True(single.Rect.Width >= balloon.Width * PatchGeometry.BalloonInteriorShare - 0.01);
     }
 
-    [Fact]
-    public void Repeated_trigrams_are_blocked()
-    {
-        // 시작 토큰 2개 + "는 는" 반복을 만드는 2토큰 주기(▁, 는)
-        List<long> history = [2, 128022, 7, 9, 7, 9];
-        Assert.True(M2M100Translator.RepeatsTrigram(history, 7));
-        Assert.False(M2M100Translator.RepeatsTrigram(history, 11));
-        Assert.False(M2M100Translator.RepeatsTrigram([2, 128022, 7], 7));
-    }
 
     [Theory]
     [InlineData("に", true)]

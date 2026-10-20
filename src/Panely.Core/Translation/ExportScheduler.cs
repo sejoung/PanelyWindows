@@ -45,21 +45,19 @@ public sealed class ExportScheduler
     private readonly IBookAccess _books;
     private readonly ITranslatedPageRenderer _renderer;
     private readonly IStateStore? _state;
-    private readonly Func<TranslationMode> _mode;
     private readonly Func<string, string> _languageName;
     private readonly SemaphoreSlim _renderSlot = new(1, 1);
     private readonly object _gate = new();
     private readonly Dictionary<Guid, Entry> _jobs = new();
 
     public ExportScheduler(TranslationScheduler translation, PageEditsStore edits, IBookAccess books, ITranslatedPageRenderer renderer,
-        IStateStore? state, Func<TranslationMode> mode, Func<string, string>? languageName = null)
+        IStateStore? state, Func<string, string>? languageName = null)
     {
         _translation = translation;
         _edits = edits;
         _books = books;
         _renderer = renderer;
         _state = state;
-        _mode = mode;
         _languageName = languageName ?? (code => Loc.LanguageName(code));
     }
 
@@ -144,17 +142,16 @@ public sealed class ExportScheduler
         try
         {
             using var book = await _books.OpenAsync(request.Book, ct).ConfigureAwait(false);
-            var mode = _mode();
             Set(e, i => i with { Total = book.Pages.Count });
 
             var source = request.Source ?? _translation.Get(request.Book.BookKey, request.Target)?.Source;
-            var cached = source is null ? new HashSet<int>() : _translation.CachedPages(book.Pages, source, request.Target, request.Scope, mode);
+            var cached = source is null ? new HashSet<int>() : _translation.CachedPages(book.Pages, source, request.Target, request.Scope);
 
             if (request.Policy == UntranslatedPolicy.TranslateFirst && cached.Count < book.Pages.Count)
             {
                 Set(e, i => i with { Phase = ExportPhase.Translating });
                 source = await WaitForTranslationAsync(request, source, ct).ConfigureAwait(false);
-                cached = _translation.CachedPages(book.Pages, source, request.Target, request.Scope, mode);
+                cached = _translation.CachedPages(book.Pages, source, request.Target, request.Scope);
             }
             else if (request.Policy == UntranslatedPolicy.ExportAsIs && cached.Count == 0)
             {
@@ -170,7 +167,7 @@ public sealed class ExportScheduler
                 Directory.CreateDirectory(request.Destination);
                 var extension = request.Format == ExportFormat.Folder ? string.Empty : request.Format == ExportFormat.Zip ? ".zip" : ".cbz";
                 staging = Path.Combine(request.Destination, $".{baseName}.{Guid.NewGuid():N}.partial");
-                await WriteAsync(e, book, source, cached, request, mode, staging, ct).ConfigureAwait(false);
+                await WriteAsync(e, book, source, cached, request, staging, ct).ConfigureAwait(false);
                 ct.ThrowIfCancellationRequested();
 
                 var final = PublishStaging(staging, request.Destination, baseName, extension, request.Format == ExportFormat.Folder);
@@ -242,7 +239,7 @@ public sealed class ExportScheduler
         }
     }
 
-    private async Task WriteAsync(Entry e, OpenedBook book, string? source, HashSet<int> cached, ExportRequest request, TranslationMode mode, string staging, CancellationToken ct)
+    private async Task WriteAsync(Entry e, OpenedBook book, string? source, HashSet<int> cached, ExportRequest request, string staging, CancellationToken ct)
     {
         ZipArchive? zip = null;
         FileStream? zipStream = null;
@@ -265,7 +262,7 @@ public sealed class ExportScheduler
                 var ext = entry.Extension;
                 List<PatchLayout> patches = [];
                 double width = 0, height = 0;
-                if (source is not null && cached.Contains(i) && _translation.LoadCached(entry.PageId, source, request.Target, request.Scope, mode) is { } page)
+                if (source is not null && cached.Contains(i) && _translation.LoadCached(entry.PageId, source, request.Target, request.Scope) is { } page)
                 {
                     width = page.ImageWidth; height = page.ImageHeight;
                     var edits = _edits.Get(entry.PageId, request.Scope);

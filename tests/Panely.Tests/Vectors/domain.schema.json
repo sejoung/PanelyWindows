@@ -181,12 +181,6 @@
             "ko"
           ]
         },
-        "translationMode": {
-          "enum": [
-            "fast",
-            "accurate"
-          ]
-        },
         "translationTargetLanguage": {
           "anyOf": [
             {
@@ -232,9 +226,6 @@
         "translationEnabled": {
           "type": "boolean"
         },
-        "translationMatchesSpeechLevel": {
-          "type": "boolean"
-        },
         "translationOverlayVisible": {
           "type": "boolean"
         },
@@ -250,7 +241,6 @@
         "direction",
         "fitMode",
         "appLanguage",
-        "translationMode",
         "translationTargetLanguage",
         "logLevel",
         "sidebarPinned",
@@ -261,7 +251,6 @@
         "wheelPageTurn",
         "reopenLastFolderOnLaunch",
         "translationEnabled",
-        "translationMatchesSpeechLevel",
         "translationOverlayVisible",
         "translationBalloonTipDismissed",
         "libraryAutoRefreshEnabled"
@@ -745,12 +734,6 @@
             "strip"
           ]
         },
-        "mode": {
-          "enum": [
-            "fast",
-            "accurate"
-          ]
-        },
         "providerRevision": {
           "type": "string",
           "minLength": 1
@@ -770,16 +753,6 @@
         "isComplete": {
           "type": "boolean"
         },
-        "speechLevelChecked": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
         "bubbles": {
           "type": "array",
           "items": {
@@ -793,7 +766,6 @@
         "source",
         "target",
         "scope",
-        "mode",
         "providerRevision",
         "analysisVersion",
         "imageWidth",

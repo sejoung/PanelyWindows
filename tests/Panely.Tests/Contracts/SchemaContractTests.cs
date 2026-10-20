@@ -116,13 +116,11 @@ public class SchemaContractTests
             SourceLanguage = "ja",
             TargetLanguage = "ko",
             Scope = TranslationScope.Strip,
-            Mode = TranslationMode.Accurate,
             ProviderRevision = "rev",
             AnalysisVersion = PageAnalyzer.AnalysisVersion,
             ImageWidth = 720,
             ImageHeight = 1200,
             IsComplete = false,
-            SpeechLevelChecked = null,
             Bubbles =
             [
                 new TranslatedBubble { Id = 0, Rect = new RectD(100, 120, 140, 260), GlyphSize = 24, IsVertical = true, Source = "こんにちは", Translation = "안녕하세요", Background = BubbleBackground.White, BalloonRect = new RectD(70, 90, 220, 320) },

@@ -144,6 +144,24 @@ public sealed class ModelStore
     /// <summary>강제 종료 후 남은 staging 정리.</summary>
     public void CleanupStaging() => TryDelete(Path.Combine(_root, ".staging"));
 
+    /// <summary>
+    /// 더 이상 쓰지 않는 모델의 설치 폴더를 지운다(이전 버전의 M2M100 팩). Models/manifests로 같은 id를 다시 선언했으면 남긴다.
+    /// 지운 폴더 수를 돌려준다.
+    /// </summary>
+    public int RemoveObsolete(IEnumerable<string> ids)
+    {
+        var removed = 0;
+        foreach (var id in ids)
+        {
+            if (Find(id) is not null) continue;
+            var dir = Path.Combine(_root, Sanitize(id));
+            if (!Directory.Exists(dir)) continue;
+            TryDelete(dir);
+            if (!Directory.Exists(dir)) removed++;
+        }
+        return removed;
+    }
+
     private static void TryDelete(string dir)
     {
         try { if (Directory.Exists(dir)) Directory.Delete(dir, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
@@ -157,8 +175,8 @@ public sealed class ModelStore
 }
 
 /// <summary>
-/// 언어팩 공급자. Windows에서 "팩"은 (1) 번역 모델 variant(모드별, 다국어 하나), (2) 선택적 탐지 모델,
-/// (3) Windows OCR 언어(앱이 설치하지 않고 Windows 설정에서 추가)로 구성된다.
+/// 언어팩 공급자. Windows에서 "팩"은 (1) 번역 모델(다국어 하나), (2) 말풍선 탐지 모델, (3) 만화 OCR 모델로 구성된다.
+/// Windows OCR 언어는 앱이 설치하지 않고 Windows 설정에서 추가한다(대체 경로).
 /// </summary>
 public sealed class LanguagePackManager : ILanguagePackProvider
 {
@@ -174,29 +192,26 @@ public sealed class LanguagePackManager : ILanguagePackProvider
 
     public event EventHandler? PacksChanged;
 
-    public static string TranslatorPackFor(TranslationMode mode) =>
-        mode == TranslationMode.Fast ? ModelCatalog.TranslatorFastId : ModelCatalog.TranslatorAccurateId;
-
-    public Capability GetCapability(string source, string target, TranslationMode mode)
+    public Capability GetCapability(string source, string target)
     {
         if (source == target || !TranslationLanguages.IsSupported(source) || !TranslationLanguages.IsSupported(target))
             return Capability.Unavailable(Loc.T("This language pair isn't supported"));
         // 필요한 팩 중 받는 중인 것이 있으면 먼저 알린다. 번역·탐지 팩은 글자 인식 팩보다 먼저 받으므로
         // 글자 인식 상태부터 보면 그동안 패널이 다운로드 중으로 보이지 않는다.
-        foreach (var id in RequiredPacks(source, mode))
+        foreach (var id in RequiredPacks(source))
             if (_store.DownloadProgress(id) is { } p) return new Capability(CapabilityStatus.Downloading, null, p);
         var ocr = _recognizer.GetCapability(source);
         // 글자 인식 팩이 없으면(다운로드 필요·불가) 번역 모델이 있어도 바로 실행할 수 없다
         if (!ocr.IsReady) return ocr;
-        return _translator.GetCapability(source, target, mode);
+        return _translator.GetCapability(source, target);
     }
 
-    public IReadOnlyList<string> MissingPacks(string source, string target, TranslationMode mode)
-        => RequiredPacks(source, mode).Where(id => _store.Find(id) is { IsVerified: true } m && !_store.IsInstalled(m)).ToList();
+    public IReadOnlyList<string> MissingPacks(string source, string target)
+        => RequiredPacks(source).Where(id => _store.Find(id) is { IsVerified: true } m && !_store.IsInstalled(m)).ToList();
 
     /// <summary>번역 모델, 말풍선 탐지, 만화 OCR 팩(일본어 manga-ocr + PP-OCR, 그 외 PP-OCR) 순. PP-OCR은 언어 감지에도 쓴다.</summary>
-    private static IEnumerable<string> RequiredPacks(string source, TranslationMode mode)
-        => new[] { TranslatorPackFor(mode), ModelCatalog.DetectorId }.Concat(ModelTextRecognizer.PacksFor(source)).Distinct();
+    private static IEnumerable<string> RequiredPacks(string source)
+        => new[] { ModelCatalog.TranslatorId, ModelCatalog.DetectorId }.Concat(ModelTextRecognizer.PacksFor(source)).Distinct();
 
     public Task InstallAsync(string packId, IProgress<InstallProgress>? progress, CancellationToken cancellationToken)
         => _store.InstallAsync(packId, progress, cancellationToken);

@@ -64,13 +64,12 @@ Panely can find speech balloons, read the text and draw a translation over the p
 | Balloon detection | [comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) (RT-DETR) | ~170 MB | GPU (DirectML), CPU fallback |
 | Japanese text | [manga-ocr](https://huggingface.co/ogkalu/manga-ocr-onnx) (int8) | ~117 MB | CPU |
 | Chinese / English / Korean text, language detection, line finding | [PP-OCRv5 mobile](https://huggingface.co/ogkalu/ppocr-v5-onnx) | ~43 MB | Line finding on GPU, reading on CPU |
-| Translation — Fast | [M2M100-418M](https://huggingface.co/Xenova/m2m100_418M) (int8) | ~640 MB | CPU |
-| Translation — Accurate | M2M100-418M (fp32) | ~2.5 GB | CPU |
+| Translation | [Gemma 4 E2B](https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf) (GGUF q4_0, run in-app with [llama.cpp](https://github.com/ggml-org/llama.cpp) via LLamaSharp) | ~3.3 GB | GPU (Vulkan), CPU fallback |
 
-The device split comes from measurements: balloon detection and text-line finding are faster on the GPU, while the text-reading and translation models are faster on the CPU. Reading and translation run at the same time, and balloons from several pages go to the translator together. Set `PANELY_ORT_DEVICE=cpu` to turn off the GPU entirely.
+The device split comes from measurements: balloon detection, text-line finding and translation are faster on the GPU, while the small text-reading models are faster on the CPU. Reading and translation run at the same time; the translator gets 16 balloons at a time together with the lines just before them, so it keeps each speaker's speech level and names. Set `PANELY_ORT_DEVICE=cpu` to turn off the GPU entirely.
 
 > [!NOTE]
-> Translation quality is limited by the small M2M100 model. Short lines and idioms are often wrong, as some balloons in the example above show. Balloons the model can't translate keep their original text, and you can correct any balloon in Edit Balloons. The Accurate mode needs about 2 GB more memory but read much better in a side-by-side comparison.
+> Translation is a small on-device model, so mistakes happen, especially when the text recognition misreads the original. Balloons the model can't translate keep their original text, and you can correct any balloon in Edit Balloons. On a PC without a usable GPU, translation runs on the CPU and is several times slower; see the [user guide](docs/manual.md#6-getting-started-with-translation).
 
 ## Getting started
 
@@ -78,7 +77,7 @@ The device split comes from measurements: balloon detection and text-line findin
 
 - Windows 10 version 2004 (build 19041) or later; Windows 11 x64 is the primary target
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) to build from source (the release ZIPs don't need .NET)
-- For translation: about 1 GB of disk space for the Fast language pack; any DirectX 12 GPU speeds up detection
+- For translation: about 3.7 GB of disk space for the language packs; a GPU with a Vulkan driver (most NVIDIA, AMD and Intel GPUs) speeds up translation, and any DirectX 12 GPU speeds up detection
 
 ### Download
 

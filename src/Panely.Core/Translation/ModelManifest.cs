@@ -25,7 +25,7 @@ public sealed partial record ModelManifest
     [JsonPropertyName("license")] public required string License { get; init; }
     [JsonPropertyName("source")] public required string Source { get; init; }
     [JsonPropertyName("languages")] public IReadOnlyList<string> Languages { get; init; } = [];
-    /// <summary>detector / translator-fast / translator-accurate / speech-level.</summary>
+    /// <summary>detector / translator / ocr-manga / ocr-ppocr(정보용, 코드는 id로 고른다).</summary>
     [JsonPropertyName("mode")] public required string Mode { get; init; }
     [JsonPropertyName("input")] public JsonElement? Input { get; init; }
     [JsonPropertyName("output")] public JsonElement? Output { get; init; }
@@ -63,6 +63,10 @@ public sealed partial record ModelManifest
     public string? InputString(string name) =>
         Input is { ValueKind: JsonValueKind.Object } o && o.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
 
+    /// <summary>runtime의 정수 설정(contextSize 등). 없거나 정수가 아니면 null.</summary>
+    public int? RuntimeInt(string name) =>
+        Runtime is { ValueKind: JsonValueKind.Object } o && o.TryGetProperty(name, out var v) && v.TryGetInt32(out var i) ? i : null;
+
     private static bool IsPlaceholder(string? s) =>
         string.IsNullOrWhiteSpace(s) || s.Contains("REQUIRED", StringComparison.OrdinalIgnoreCase) || s.Contains("VALIDATE", StringComparison.OrdinalIgnoreCase);
 
@@ -81,8 +85,10 @@ public sealed partial record ModelManifest
 public static class ModelCatalog
 {
     public const string DetectorId = "comic-text-and-bubble-detector";
-    public const string TranslatorFastId = "m2m100-418m-int8";
-    public const string TranslatorAccurateId = "m2m100-418m-fp32";
+    /// <summary>번역 모델(Gemma 4 E2B, GGUF). 말투·문맥까지 한 번에 처리한다(ADR 0008).</summary>
+    public const string TranslatorId = "gemma-4-e2b-it-q4_0";
+    /// <summary>이전 버전의 M2M100 언어팩. 시작할 때 설치 폴더를 지운다.</summary>
+    public static IReadOnlyList<string> ObsoleteIds { get; } = ["m2m100-418m-int8", "m2m100-418m-fp32"];
     /// <summary>일본어 만화 OCR(manga-ocr).</summary>
     public const string MangaOcrId = "manga-ocr-int8";
     /// <summary>중국어·영어·한국어 OCR과 글자 줄 탐지, 언어 감지(PP-OCRv5).</summary>
@@ -107,42 +113,16 @@ public static class ModelCatalog
         """),
         ModelManifest.Parse("""
         {
-          "id": "m2m100-418m-int8",
-          "revision": "9c374f0b7aca709787cea97b047bfbbd1559d177",
-          "files": [
-            {"name": "encoder_model_quantized.onnx", "bytes": 287856370, "sha256": "13a94e354a9140764eb81102d77d3ec6952d796e6f113c651eeb3c3443da0386", "url": "https://huggingface.co/Xenova/m2m100_418M/resolve/9c374f0b7aca709787cea97b047bfbbd1559d177/onnx/encoder_model_quantized.onnx"},
-            {"name": "decoder_model_merged_quantized.onnx", "bytes": 344128178, "sha256": "007654bcabb6cea6fd3bde34ce933137b431330b3755781145d7b6906270b45a", "url": "https://huggingface.co/Xenova/m2m100_418M/resolve/9c374f0b7aca709787cea97b047bfbbd1559d177/onnx/decoder_model_merged_quantized.onnx"},
-            {"name": "sentencepiece.bpe.model", "bytes": 2423393, "sha256": "d8f7c76ed2a5e0822be39f0a4f95a55eb19c78f4593ce609e2edbc2aea4d380a"},
-            {"name": "vocab.json", "bytes": 3708092, "sha256": "b6e77e474aeea8f441363aca7614317c06381f3eacfe10fb9856d5081d1074cc"}
-          ],
-          "license": "MIT (facebook/m2m100_418M weights). The Xenova ONNX conversion repo states no separate license; Panely does not redistribute the files, the user downloads them from the pinned source.",
-          "source": "https://huggingface.co/Xenova/m2m100_418M/resolve/9c374f0b7aca709787cea97b047bfbbd1559d177",
-          "validation": "sha256 of the ONNX files matches the Hub LFS objects; tokenizer hashes computed from the downloaded files. Translated ja/en→ko end to end on CPU with the KV-cache merged decoder (batched). Quality not checked against a golden set.",
+          "id": "gemma-4-e2b-it-q4_0",
+          "revision": "675cff42a74c774d6cb76f76d8eacb49b48c9b93",
+          "files": [{"name": "gemma-4-E2B_q4_0-it.gguf", "bytes": 3349516256, "sha256": "fa401b55b07ee70a54c6dae3903c783a6e65064312529ea57175cb5f8dec6634"}],
+          "license": "Apache-2.0 (Gemma 4, model card license at this revision)",
+          "source": "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/resolve/675cff42a74c774d6cb76f76d8eacb49b48c9b93",
+          "validation": "sha256 matches the Hub LFS object published by Google. Ran in-process with LLamaSharp 0.30.0 (Vulkan and CPU) next to the ONNX Runtime DirectML detector; translated a 298-page Japanese webtoon (146 balloons) ja→ko with no missing lines. In the developer's side-by-side review it read much better than M2M100 (one reviewer, not a golden set).",
           "languages": ["ja", "zh-Hans", "zh-Hant", "ko", "en"],
-          "mode": "translator-fast",
-          "input": {"encoder": "encoder_model_quantized.onnx", "decoder": "decoder_model_merged_quantized.onnx", "tokenizer": "sentencepiece.bpe.model", "vocab": "vocab.json"},
-          "output": {"logits": "logits", "encoderHidden": "last_hidden_state"},
-          "runtime": {"cpu": true, "gpu": false, "maxNewTokens": 128, "beams": 1}
-        }
-        """),
-        ModelManifest.Parse("""
-        {
-          "id": "m2m100-418m-fp32",
-          "revision": "9c374f0b7aca709787cea97b047bfbbd1559d177",
-          "files": [
-            {"name": "encoder_model.onnx", "bytes": 1133698852, "sha256": "2aaf1612c2738dec7de0a12d3f5ebb1168a38b735a33db5be7719dd669750544", "url": "https://huggingface.co/Xenova/m2m100_418M/resolve/9c374f0b7aca709787cea97b047bfbbd1559d177/onnx/encoder_model.onnx"},
-            {"name": "decoder_model_merged.onnx", "bytes": 1340271309, "sha256": "22acc8d593ed1dfa9c45645c1f36ec4b9ed8ce721764509f465d7160eea78453", "url": "https://huggingface.co/Xenova/m2m100_418M/resolve/9c374f0b7aca709787cea97b047bfbbd1559d177/onnx/decoder_model_merged.onnx"},
-            {"name": "sentencepiece.bpe.model", "bytes": 2423393, "sha256": "d8f7c76ed2a5e0822be39f0a4f95a55eb19c78f4593ce609e2edbc2aea4d380a"},
-            {"name": "vocab.json", "bytes": 3708092, "sha256": "b6e77e474aeea8f441363aca7614317c06381f3eacfe10fb9856d5081d1074cc"}
-          ],
-          "license": "MIT (facebook/m2m100_418M weights). The Xenova ONNX conversion repo states no separate license; Panely does not redistribute the files, the user downloads them from the pinned source.",
-          "source": "https://huggingface.co/Xenova/m2m100_418M/resolve/9c374f0b7aca709787cea97b047bfbbd1559d177",
-          "validation": "sha256 pinned from the Hub LFS objects; downloaded in the app and checksum-verified on 2026-10-20. Translated a 298-page Japanese webtoon (146 balloons) ja→ko on CPU: end to end about 7 s slower than Fast and about 2.2 GB more peak memory. In the developer's side-by-side review its translations were clearly better than Fast (one reviewer, not a golden set).",
-          "languages": ["ja", "zh-Hans", "zh-Hant", "ko", "en"],
-          "mode": "translator-accurate",
-          "input": {"encoder": "encoder_model.onnx", "decoder": "decoder_model_merged.onnx", "tokenizer": "sentencepiece.bpe.model", "vocab": "vocab.json"},
-          "output": {"logits": "logits", "encoderHidden": "last_hidden_state"},
-          "runtime": {"cpu": true, "gpu": false, "maxNewTokens": 160, "beams": 4}
+          "mode": "translator",
+          "input": {"model": "gemma-4-E2B_q4_0-it.gguf"},
+          "runtime": {"contextSize": 8192, "gpuLayers": 99}
         }
         """),
         ModelManifest.Parse("""

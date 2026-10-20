@@ -33,13 +33,11 @@ public sealed record TranslatedPage
     public required string SourceLanguage { get; init; }
     public required string TargetLanguage { get; init; }
     public required TranslationScope Scope { get; init; }
-    public required TranslationMode Mode { get; init; }
     public required string ProviderRevision { get; init; }
     public required int AnalysisVersion { get; init; }
     public required double ImageWidth { get; init; }
     public required double ImageHeight { get; init; }
     public required bool IsComplete { get; init; }
-    public bool? SpeechLevelChecked { get; init; }
     public required IReadOnlyList<TranslatedBubble> Bubbles { get; init; }
 }
 

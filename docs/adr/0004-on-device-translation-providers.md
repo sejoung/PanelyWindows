@@ -1,6 +1,6 @@
 # ADR 0004: 번역은 내려받은 ONNX 모델로 PC 안에서만 한다
 
-- 상태: 채택(첫 구현 때 정한 것을 2026-10-19에 사후 기록)
+- 상태: 채택(첫 구현 때 정한 것을 2026-10-19에 사후 기록). 번역 모델(M2M100)과 6·7번은 [ADR 0008](0008-gemma-translator.md)이 대체(2026-10-20)
 - 날짜: 2026-10-19
 - 관련 코드: `TranslationService.CreateDefaultProviders`, `ModelManifest`, `ModelStore`, `OnnxSessions`, `OcrRuntimePolicy`, `ModelTextRecognizer`, `WindowsOcrRecognizer`, `M2M100Translator`, `UnavailableSpeechLevelCorrector`
 - 테스트: `TranslationCoreTests.cs`(manifest 검증), `TranslationAlgorithmTests.cs`(탐지·OCR 후처리), `PANELY_TEST_DETECTOR_MODEL`을 줄 때만 도는 탐지 통합 테스트

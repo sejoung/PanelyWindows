@@ -56,6 +56,28 @@ public class StateStoreTests
     }
 
     [Fact]
+    public void StateFromBeforeTheGemmaTranslatorStillLoads()
+    {
+        // 1.0.x는 번역 방식(fast/accurate)과 말투 맞춤 설정을 저장했다. 이 키들은 무시되고, 손상으로 처리되면 안 된다(데이터 유실).
+        var (t, paths, diag) = Env();
+        using var scope = t;
+        var old = File.ReadAllText(ExamplePath).Replace("\"settings\": {", "\"settings\": {\n    \"translationMode\": \"accurate\",\n    \"translationMatchesSpeechLevel\": true,", StringComparison.Ordinal);
+        Assert.Contains("\"accurate\"", old, StringComparison.Ordinal);
+        File.WriteAllText(paths.StateFile, old);
+        using (var store = new StateStore(paths, diag))
+        {
+            Assert.False(store.IsReadOnly);
+            Assert.Null(store.LoadProblem);
+            Assert.Equal(2, store.GetPosition(SampleKey));
+            Assert.Single(store.Recents);
+            store.UpdateSettings(s => s.TranslationEnabled = true);
+            store.Flush();
+        }
+        Assert.Empty(Directory.EnumerateFiles(Path.GetDirectoryName(paths.StateFile)!, "state.corrupt-*.json"));
+        Assert.DoesNotContain("translationMode", File.ReadAllText(paths.StateFile), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RoundTrip_UsesSchemaNames()
     {
         var (t, paths, diag) = Env();

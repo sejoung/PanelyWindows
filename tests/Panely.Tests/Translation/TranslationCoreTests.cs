@@ -23,7 +23,7 @@ public class TranslationStorageTests
         Assert.Equal(page.Bubbles[0], again.Bubbles[0]);
         // 스키마 필드 이름 유지
         using var doc = JsonDocument.Parse(TranslationJson.Serialize(page));
-        foreach (var name in new[] { "schemaVersion", "pageId", "source", "target", "scope", "mode", "providerRevision", "analysisVersion", "imageWidth", "imageHeight", "isComplete", "bubbles" })
+        foreach (var name in new[] { "schemaVersion", "pageId", "source", "target", "scope", "providerRevision", "analysisVersion", "imageWidth", "imageHeight", "isComplete", "bubbles" })
             Assert.True(doc.RootElement.TryGetProperty(name, out _), name);
         Assert.True(doc.RootElement.GetProperty("bubbles")[0].GetProperty("background").TryGetProperty("isUniform", out _));
     }
@@ -56,15 +56,14 @@ public class TranslationStorageTests
         using var dir = new TempDir();
         var cache = new TranslationCache(dir.Path);
         var page = TranslationJson.DeserializePage(TrVectors.ExampleText("translation-page.json"));
-        var key = new TranslationCacheKey(page.PageId, "ja", "ko", TranslationScope.Page, TranslationMode.Fast, 1, "rev");
+        var key = new TranslationCacheKey(page.PageId, "ja", "ko", TranslationScope.Page, 1, "rev");
         Assert.False(cache.Store(key, page with { IsComplete = false }, cache.Generation));
         var stale = cache.Generation;
         cache.Clear();
         Assert.False(cache.Store(key, page, stale));
         Assert.True(cache.Store(key, page, cache.Generation));
         Assert.NotNull(cache.TryLoad(key));
-        // identity: 다른 모드/scope/revision은 miss
-        Assert.Null(cache.TryLoad(key with { Mode = TranslationMode.Accurate }));
+        // identity: 다른 scope/revision(번역 모델·프롬프트)은 miss
         Assert.Null(cache.TryLoad(key with { Scope = TranslationScope.Strip }));
         Assert.Null(cache.TryLoad(key with { ProviderRevision = "rev2" }));
         Assert.True(cache.SizeBytes() > 0);
@@ -76,7 +75,7 @@ public class TranslationStorageTests
         using var dir = new TempDir();
         var cache = new TranslationCache(dir.Path);
         var page = TranslationJson.DeserializePage(TrVectors.ExampleText("translation-page.json"));
-        var key = new TranslationCacheKey(page.PageId, "ja", "ko", TranslationScope.Page, TranslationMode.Fast, 1, "rev");
+        var key = new TranslationCacheKey(page.PageId, "ja", "ko", TranslationScope.Page, 1, "rev");
         Assert.True(cache.Store(key, page, cache.Generation));
         foreach (var f in Directory.EnumerateFiles(dir.Path, "*.json", SearchOption.AllDirectories)) File.WriteAllText(f, "{ broken");
         Assert.Null(cache.TryLoad(key));
@@ -118,7 +117,8 @@ public class ModelManifestTests
     [Fact]
     public void BuiltInManifestsArePinnedButNotInstalledByDefault()
     {
-        Assert.Equal(5, ModelCatalog.BuiltIn.Count);
+        Assert.Equal(4, ModelCatalog.BuiltIn.Count);
+        Assert.DoesNotContain(ModelCatalog.BuiltIn, m => ModelCatalog.ObsoleteIds.Contains(m.Id));
         Assert.All(ModelCatalog.BuiltIn, m =>
         {
             Assert.Null(m.VerificationProblem());
@@ -129,7 +129,24 @@ public class ModelManifestTests
         using var dir = new TempDir();
         var store = new ModelStore(dir.Path, manifests: ModelCatalog.BuiltIn);
         Assert.False(store.IsInstalled(ModelCatalog.DetectorId));
-        Assert.False(store.IsInstalled(ModelCatalog.TranslatorFastId));
+        Assert.False(store.IsInstalled(ModelCatalog.TranslatorId));
+    }
+
+    [Fact]
+    public void RemoveObsoleteDeletesOldPackFoldersOnly()
+    {
+        using var dir = new TempDir();
+        foreach (var id in ModelCatalog.ObsoleteIds.Append(ModelCatalog.DetectorId))
+        {
+            Directory.CreateDirectory(Path.Combine(dir.Path, id, "rev"));
+            File.WriteAllText(Path.Combine(dir.Path, id, "rev", "model.onnx"), "x");
+        }
+        var store = new ModelStore(dir.Path, manifests: ModelCatalog.BuiltIn);
+
+        Assert.Equal(ModelCatalog.ObsoleteIds.Count, store.RemoveObsolete(ModelCatalog.ObsoleteIds));
+        Assert.All(ModelCatalog.ObsoleteIds, id => Assert.False(Directory.Exists(Path.Combine(dir.Path, id))));
+        Assert.True(Directory.Exists(Path.Combine(dir.Path, ModelCatalog.DetectorId)));
+        Assert.Equal(0, store.RemoveObsolete(ModelCatalog.ObsoleteIds));
     }
 
     [Fact]
@@ -226,18 +243,18 @@ public class ModelManifestTests
         using var dir = new TempDir();
         var payload = "translator"u8.ToArray();
         var release = new TaskCompletionSource();
-        var store = new ModelStore(dir.Path, () => new HttpClient(new GatedHandler(payload, release.Task)), [PackManifest(ModelCatalog.TranslatorFastId, payload)]);
+        var store = new ModelStore(dir.Path, () => new HttpClient(new GatedHandler(payload, release.Task)), [PackManifest(ModelCatalog.TranslatorId, payload)]);
         // 글자 인식 팩이 아직 없는 상태
         var recognizer = new FakeRecognizer();
         recognizer.Languages.Clear();
         var packs = new LanguagePackManager(store, recognizer, new PseudoTranslator { Delay = TimeSpan.Zero });
 
-        var install = store.InstallAsync(ModelCatalog.TranslatorFastId, null, CancellationToken.None);
-        Assert.Equal(CapabilityStatus.Downloading, packs.GetCapability("en", "ko", TranslationMode.Fast).Status);
+        var install = store.InstallAsync(ModelCatalog.TranslatorId, null, CancellationToken.None);
+        Assert.Equal(CapabilityStatus.Downloading, packs.GetCapability("en", "ko").Status);
 
         release.SetResult();
         await install;
-        Assert.NotEqual(CapabilityStatus.Downloading, packs.GetCapability("en", "ko", TranslationMode.Fast).Status);
+        Assert.NotEqual(CapabilityStatus.Downloading, packs.GetCapability("en", "ko").Status);
     }
 
     private sealed class GatedHandler(byte[] payload, Task gate) : HttpMessageHandler
@@ -259,23 +276,49 @@ public class ModelManifestTests
 public class TranslationProviderTests
 {
     [Fact]
-    public void SpeechLevelReportsUnavailable()
+    public void GemmaWithoutInstalledModelNeedsDownload()
     {
-        var c = new UnavailableSpeechLevelCorrector();
-        Assert.Equal(CapabilityStatus.Unavailable, c.GetCapability("ja", "ko").Status);
-        Assert.False(string.IsNullOrWhiteSpace(c.GetCapability("ja", "ko").Reason));
+        using var dir = new TempDir();
+        using var t = new GemmaTranslator(new ModelStore(dir.Path, manifests: ModelCatalog.BuiltIn));
+        var capability = t.GetCapability("ja", "ko");
+        Assert.Equal(CapabilityStatus.Supported, capability.Status);
+        Assert.False(capability.IsReady);
+        // 간체↔번체도 서로 다른 언어로 번역한다(M2M100은 zh 하나라 불가였다)
+        Assert.Equal(CapabilityStatus.Supported, t.GetCapability("zh-Hans", "zh-Hant").Status);
+        Assert.Equal(CapabilityStatus.Unavailable, t.GetCapability("ko", "ko").Status);
+        Assert.StartsWith(ModelCatalog.TranslatorId + "@", t.Revision, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void M2M100WithoutInstalledModelNeedsDownload()
+    public void GemmaPromptUsesTurnFormatContextAndSpeechLevelRule()
     {
-        using var dir = new TempDir();
-        var t = new M2M100Translator(new ModelStore(dir.Path, manifests: ModelCatalog.BuiltIn));
-        var capability = t.GetCapability("ja", "ko", TranslationMode.Fast);
-        Assert.Equal(CapabilityStatus.Supported, capability.Status);
-        Assert.False(capability.IsReady);
-        Assert.Equal(CapabilityStatus.Unavailable, t.GetCapability("zh-Hans", "zh-Hant", TranslationMode.Fast).Status);
-        Assert.NotEqual(t.Revision(TranslationMode.Fast), t.Revision(TranslationMode.Accurate));
+        var prompt = GemmaTranslator.BuildPrompt(
+            [new TranslationRequestItem("a", "こんにちは"), new TranslationRequestItem("b", "まだ\nだめ")],
+            [new TranslationContextLine("おはよう", "좋은 아침")], "ja", "ko");
+
+        Assert.StartsWith("<|turn>user\n", prompt, StringComparison.Ordinal);
+        Assert.EndsWith("<turn|>\n<|turn>model\n", prompt, StringComparison.Ordinal);
+        Assert.Contains("Japanese comic dialogue into natural Korean", prompt, StringComparison.Ordinal);
+        Assert.Contains("존댓말", prompt, StringComparison.Ordinal);
+        Assert.Contains("おはよう → 좋은 아침", prompt, StringComparison.Ordinal);
+        // 번호는 1부터 입력 순서, 풍선 안 줄바꿈은 " / "
+        Assert.Contains("[1] こんにちは\n[2] まだ / だめ\n", prompt, StringComparison.Ordinal);
+        Assert.DoesNotContain("Earlier lines", GemmaTranslator.BuildPrompt([new TranslationRequestItem("a", "x")], [], "en", "ko"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GemmaOutputParsingKeepsNumberedLinesOnly()
+    {
+        var lines = GemmaTranslator.ParseLines("Here you go:\n[1] 안녕하세요\n  [2]   아직 / 안 돼  \n[3]\n[x] 무시\n");
+        Assert.Equal(new[] { (1, "안녕하세요"), (2, "아직 / 안 돼") }, lines);
+    }
+
+    [Fact]
+    public void GemmaCleanRestoresLineBreaksAndDashes()
+    {
+        Assert.Equal("나의 목소리가\n들리는가——", GemmaTranslator.Clean("나의 목소리가 / 들리는가ーー", "ko"));
+        // 일본어로 번역할 때는 장음 기호를 그대로 둔다
+        Assert.Equal("すごいーー", GemmaTranslator.Clean("すごいーー", "ja"));
     }
 
     [Fact]
@@ -357,8 +400,8 @@ public class TranslationSchedulerTests
         lock (order) Assert.Equal([2, 3, 0, 1], order.Distinct());
         var info = scheduler.Get(book.BookKey, "ko")!;
         Assert.Equal(4, info.CompletedPages);
-        Assert.Equal(4, scheduler.CachedPages(book.Pages, "ja", "ko", TranslationScope.Page, TranslationMode.Fast).Count);
-        var cached = scheduler.LoadCached(book.Pages[1].PageId, "ja", "ko", TranslationScope.Page, TranslationMode.Fast)!;
+        Assert.Equal(4, scheduler.CachedPages(book.Pages, "ja", "ko", TranslationScope.Page).Count);
+        var cached = scheduler.LoadCached(book.Pages[1].PageId, "ja", "ko", TranslationScope.Page)!;
         Assert.Equal("[번역] こんにちは1", cached.Bubbles[0].Translation);
     }
 
@@ -379,7 +422,7 @@ public class TranslationSchedulerTests
         await Wait.UntilAsync(() => scheduler.Get(book.BookKey, "ko")?.Phase is TranslationPhase.Completed or TranslationPhase.Failed);
         var info = scheduler.Get(book.BookKey, "ko")!;
         Assert.Equal(TranslationPhase.Completed, info.Phase);
-        var page = scheduler.LoadCached(book.Pages[0].PageId, "ja", "ko", TranslationScope.Page, TranslationMode.Fast)!;
+        var page = scheduler.LoadCached(book.Pages[0].PageId, "ja", "ko", TranslationScope.Page)!;
         Assert.True(page.Bubbles.Count > 8);
         Assert.All(page.Bubbles, b => Assert.NotNull(b.Translation));
     }
@@ -435,15 +478,18 @@ public class TranslationSchedulerTests
     }
 
     [Fact]
-    public async Task UnsupportedPairFails()
+    public async Task UnavailablePacksFailTheJobWithTheirReason()
     {
+        // 간체↔번체도 이제 번역할 수 있는 쌍이다. 사용 불가 사유는 언어팩 공급자가 정하고 작업은 그 사유로 끝난다.
         using var dir = new TempDir();
         var book = FakeBooks.Create(1);
         var providers = FakeProviders.Create(packs: () => Capability.Unavailable("pair"));
         await using var scheduler = new TranslationScheduler(providers, new TranslationCache(dir.Path), new FakePixels(), new FakeBookAccess(() => FakeBooks.Create(1)));
         scheduler.Start(BookTarget.From(book), "zh-Hant", "zh-Hans", TranslationScope.Page);
         await Wait.UntilAsync(() => scheduler.Get(book.BookKey, "zh-Hant")?.Phase == TranslationPhase.Failed);
-        Assert.Equal(TranslationStopReason.UnsupportedPair, scheduler.Get(book.BookKey, "zh-Hant")!.Reason);
+        var info = scheduler.Get(book.BookKey, "zh-Hant")!;
+        Assert.Equal(TranslationStopReason.Failed, info.Reason);
+        Assert.Equal("pair", info.ReasonMessage);
     }
 
     [Fact]
@@ -540,7 +586,7 @@ public class TranslationSchedulerTests
         scheduler.PageUpdated += (_, u) => { lock (updates) updates.Add(u); };
         scheduler.Start(BookTarget.From(book), "ko", "ja", TranslationScope.Strip);
         await Wait.UntilAsync(() => scheduler.Get(book.BookKey, "ko")?.Phase == TranslationPhase.Completed);
-        var cached = Enumerable.Range(0, 5).Select(p => scheduler.LoadCached(book.Pages[p].PageId, "ja", "ko", TranslationScope.Strip, TranslationMode.Fast)).ToList();
+        var cached = Enumerable.Range(0, 5).Select(p => scheduler.LoadCached(book.Pages[p].PageId, "ja", "ko", TranslationScope.Strip)).ToList();
         Assert.All(cached, Assert.NotNull);
         // band0 y=1800(center 1815, owned [0,1900)) → page 3 local y 72; band1 local 400 → strip 1800 → owned by band0 → 버림
         var page3 = cached[3]!;
@@ -574,18 +620,18 @@ public class ExportSchedulerTests
         var (scheduler, edits, book) = await PrepareAsync(dir, 3, true);
         await using var schedulerScope = scheduler;
         // page 2(index 1)의 풍선 숨김 → 원본 bytes 그대로
-        var page1 = scheduler.LoadCached(book.Pages[1].PageId, "ja", "ko", TranslationScope.Page, TranslationMode.Fast)!;
+        var page1 = scheduler.LoadCached(book.Pages[1].PageId, "ja", "ko", TranslationScope.Page)!;
         var e = PageEditsEditor.Empty(book.Pages[1].PageId, TranslationScope.Page);
         (e, var i) = PageEditsEditor.Ensure(e, page1.Bubbles[0].Source, page1.Bubbles[0].Rect);
         edits.Save(PageEditsEditor.SetHidden(e, i, true));
         // page 1(index 0) 사용자 번역
-        var page0 = scheduler.LoadCached(book.Pages[0].PageId, "ja", "ko", TranslationScope.Page, TranslationMode.Fast)!;
+        var page0 = scheduler.LoadCached(book.Pages[0].PageId, "ja", "ko", TranslationScope.Page)!;
         var e0 = PageEditsEditor.Empty(book.Pages[0].PageId, TranslationScope.Page);
         (e0, var k) = PageEditsEditor.Ensure(e0, page0.Bubbles[0].Source, page0.Bubbles[0].Rect);
         edits.Save(PageEditsEditor.SetTranslation(e0, k, "ko", "내 번역"));
 
         var renderer = new FakeRenderer();
-        var exports = new ExportScheduler(scheduler, edits, new FakeBookAccess(() => FakeBooks.Create(3)), renderer, null, () => TranslationMode.Fast, _ => "Korean");
+        var exports = new ExportScheduler(scheduler, edits, new FakeBookAccess(() => FakeBooks.Create(3)), renderer, null, _ => "Korean");
         var outDir = Path.Combine(dir.Path, "out");
         var job = exports.Enqueue(new ExportRequest(BookTarget.From(book), "ko", "ja", ExportFormat.Cbz, UntranslatedPolicy.TranslateFirst, outDir, TranslationScope.Page));
         await Wait.UntilAsync(() => exports.Jobs.Single().IsTerminal);
@@ -608,7 +654,7 @@ public class ExportSchedulerTests
         using var dir = new TempDir();
         var (scheduler, edits, book) = await PrepareAsync(dir, 2, true);
         await using var schedulerScope = scheduler;
-        var exports = new ExportScheduler(scheduler, edits, new FakeBookAccess(() => FakeBooks.Create(2)), new FakeRenderer(), null, () => TranslationMode.Fast, _ => "Korean");
+        var exports = new ExportScheduler(scheduler, edits, new FakeBookAccess(() => FakeBooks.Create(2)), new FakeRenderer(), null, _ => "Korean");
         var outDir = Path.Combine(dir.Path, "out");
         Directory.CreateDirectory(Path.Combine(outDir, "Sample [Korean]"));
         exports.Enqueue(new ExportRequest(BookTarget.From(book), "ko", "ja", ExportFormat.Folder, UntranslatedPolicy.ExportAsIs, outDir, TranslationScope.Page));
@@ -625,7 +671,7 @@ public class ExportSchedulerTests
         using var dir = new TempDir();
         var (scheduler, edits, book) = await PrepareAsync(dir, 2, false);
         await using var schedulerScope = scheduler;
-        var exports = new ExportScheduler(scheduler, edits, new FakeBookAccess(() => FakeBooks.Create(2)), new FakeRenderer(), null, () => TranslationMode.Fast, _ => "Korean");
+        var exports = new ExportScheduler(scheduler, edits, new FakeBookAccess(() => FakeBooks.Create(2)), new FakeRenderer(), null, _ => "Korean");
         exports.Enqueue(new ExportRequest(BookTarget.From(book), "ko", "ja", ExportFormat.Zip, UntranslatedPolicy.ExportAsIs, Path.Combine(dir.Path, "out"), TranslationScope.Page));
         await Wait.UntilAsync(() => exports.Jobs.Single().IsTerminal);
         Assert.Equal(ExportPhase.Failed, exports.Jobs.Single().Phase);
@@ -639,7 +685,7 @@ public class ExportSchedulerTests
         var (scheduler, edits, book) = await PrepareAsync(dir, 3, false);
         await using var schedulerScope = scheduler;
         var phases = new List<ExportPhase>();
-        var exports = new ExportScheduler(scheduler, edits, new FakeBookAccess(() => FakeBooks.Create(3)), new FakeRenderer(), null, () => TranslationMode.Fast, _ => "Korean");
+        var exports = new ExportScheduler(scheduler, edits, new FakeBookAccess(() => FakeBooks.Create(3)), new FakeRenderer(), null, _ => "Korean");
         exports.JobChanged += (_, i) => { lock (phases) phases.Add(i.Phase); };
         exports.Enqueue(new ExportRequest(BookTarget.From(book), "ko", "ja", ExportFormat.Zip, UntranslatedPolicy.TranslateFirst, Path.Combine(dir.Path, "out"), TranslationScope.Page));
         await Wait.UntilAsync(() => exports.Jobs.Single().IsTerminal);
@@ -655,7 +701,7 @@ public class ExportSchedulerTests
         var (scheduler, edits, book) = await PrepareAsync(dir, 3, true);
         await using var schedulerScope = scheduler;
         var renderer = new FakeRenderer { Delay = TimeSpan.FromMilliseconds(300) };
-        var exports = new ExportScheduler(scheduler, edits, new FakeBookAccess(() => FakeBooks.Create(3)), renderer, null, () => TranslationMode.Fast, _ => "Korean");
+        var exports = new ExportScheduler(scheduler, edits, new FakeBookAccess(() => FakeBooks.Create(3)), renderer, null, _ => "Korean");
         var outDir = Path.Combine(dir.Path, "out");
         var job = exports.Enqueue(new ExportRequest(BookTarget.From(book), "ko", "ja", ExportFormat.Cbz, UntranslatedPolicy.ExportAsIs, outDir, TranslationScope.Page));
         await Wait.UntilAsync(() => renderer.Calls >= 1);

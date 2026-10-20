@@ -64,13 +64,12 @@ Mac을 쓰시나요? [macOS용 Panely](https://github.com/sejoung/Panely)를 보
 | 말풍선 탐지 | [comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) (RT-DETR) | 약 170MB | GPU(DirectML), 안 되면 CPU |
 | 일본어 글자 인식 | [manga-ocr](https://huggingface.co/ogkalu/manga-ocr-onnx) (int8) | 약 117MB | CPU |
 | 중국어·영어·한국어 글자 인식, 언어 감지, 글자 줄 찾기 | [PP-OCRv5 mobile](https://huggingface.co/ogkalu/ppocr-v5-onnx) | 약 43MB | 줄 찾기는 GPU, 읽기는 CPU |
-| 번역 — 빠름 | [M2M100-418M](https://huggingface.co/Xenova/m2m100_418M) (int8) | 약 640MB | CPU |
-| 번역 — 정확 | M2M100-418M (fp32) | 약 2.5GB | CPU |
+| 번역 | [Gemma 4 E2B](https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf) (GGUF q4_0, LLamaSharp로 [llama.cpp](https://github.com/ggml-org/llama.cpp)를 앱 안에서 실행) | 약 3.3GB | GPU(Vulkan), 안 되면 CPU |
 
-장치 배분은 실측 결과입니다. 말풍선 탐지와 글자 줄 찾기는 GPU가 빠르고, 글자 읽기와 번역 모델은 CPU가 더 빠릅니다. 글자 읽기와 번역은 함께 돌고, 번역기에는 여러 쪽의 말풍선이 한꺼번에 들어갑니다. `PANELY_ORT_DEVICE=cpu`로 GPU를 완전히 끌 수 있습니다.
+장치 배분은 실측 결과입니다. 말풍선 탐지, 글자 줄 찾기, 번역은 GPU가 빠르고, 작은 글자 읽기 모델은 CPU가 더 빠릅니다. 글자 읽기와 번역은 함께 돌고, 번역기에는 말풍선 16개가 바로 앞 대사와 함께 들어가 인물마다 말투와 이름을 이어 갑니다. `PANELY_ORT_DEVICE=cpu`로 GPU를 완전히 끌 수 있습니다.
 
 > [!NOTE]
-> 번역 품질은 작은 M2M100 모델의 한계가 있습니다. 짧은 대사와 관용 표현은 자주 틀리며, 위 예시에도 틀린 말풍선이 있습니다. 모델이 번역하지 못한 말풍선은 원문을 그대로 보여 주며, 말풍선 편집에서 어떤 말풍선이든 직접 고칠 수 있습니다. 정확 모드는 메모리를 약 2GB 더 쓰지만, 나란히 비교해 본 결과 번역이 훨씬 나았습니다.
+> 번역은 PC 안에서 도는 작은 모델이라 틀릴 때가 있고, 특히 글자 인식이 원문을 잘못 읽으면 번역도 틀립니다. 모델이 번역하지 못한 말풍선은 원문을 그대로 보여 주며, 말풍선 편집에서 어떤 말풍선이든 직접 고칠 수 있습니다. 쓸 수 있는 GPU가 없는 PC에서는 번역이 CPU로 돌아 몇 배 느립니다. [사용 설명서](docs/manual.ko.md#6-번역-시작하기)를 보세요.
 
 ## 시작하기
 
@@ -78,7 +77,7 @@ Mac을 쓰시나요? [macOS용 Panely](https://github.com/sejoung/Panely)를 보
 
 - Windows 10 버전 2004(빌드 19041) 이상. 1차 대상은 Windows 11 x64입니다
 - 소스에서 빌드하려면 [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)(배포 ZIP은 .NET 없이 실행됩니다)
-- 번역: 빠름 언어팩에 디스크 약 1GB. DirectX 12 GPU가 있으면 말풍선 탐지가 빨라집니다
+- 번역: 언어팩에 디스크 약 3.7GB. Vulkan 드라이버가 있는 GPU(대부분의 NVIDIA·AMD·Intel GPU)가 있으면 번역이, DirectX 12 GPU가 있으면 말풍선 탐지가 빨라집니다
 
 ### 내려받기
 

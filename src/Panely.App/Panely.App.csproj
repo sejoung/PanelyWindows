@@ -41,7 +41,27 @@
     <PackageReference Include="Magick.NET-Q8-AnyCPU" Version="15.0.0" />
     <!-- GPU 추론(DirectML 실행 공급자)용 재배포 DirectML.dll. ONNX Runtime DirectML 패키지가 의존하는 버전과 맞춘다. -->
     <PackageReference Include="Microsoft.AI.DirectML" Version="1.15.4" ExcludeAssets="build" GeneratePathProperty="true" />
+    <!-- llama.cpp 네이티브(번역 모델). CPU는 x64(AVX 단계별)·ARM64, Vulkan GPU는 win-x64만 있다. -->
+    <PackageReference Include="LLamaSharp.Backend.Cpu" Version="0.30.0" />
+    <PackageReference Include="LLamaSharp.Backend.Vulkan.Windows" Version="0.30.0" />
   </ItemGroup>
+
+  <!--
+    LLamaSharp 백엔드 패키지는 props로 LLamaSharpRuntimes를 복사하는데, RID가 없거나(개발 빌드) 그 RID 폴더가 없으면(win-arm64의 Vulkan)
+    모든 OS 파일을 통째로 복사한다. 복사 전에 이 앱이 쓰는 Windows RID 파일만 남긴다(RID가 없으면 win-x64).
+  -->
+  <Target Name="KeepOnlyWindowsLlamaNatives" BeforeTargets="AssignTargetPaths">
+    <PropertyGroup>
+      <_LlamaRid>$(RuntimeIdentifier)</_LlamaRid>
+      <_LlamaRid Condition="'$(_LlamaRid)' == ''">win-x64</_LlamaRid>
+    </PropertyGroup>
+    <ItemGroup>
+      <_LlamaNative Include="@(Content)" Condition="$([System.String]::Copy('%(Content.FullPath)').Contains('LLamaSharpRuntimes'))" />
+      <_LlamaKeep Include="@(_LlamaNative)" Condition="$([System.String]::Copy('%(_LlamaNative.FullPath)').Contains('LLamaSharpRuntimes\$(_LlamaRid)'))" />
+      <Content Remove="@(_LlamaNative)" />
+      <Content Include="@(_LlamaKeep)" />
+    </ItemGroup>
+  </Target>
 
   <!--
     Microsoft.AI.DirectML의 build 타깃은 PlatformTarget이 x64/ARM64일 때만 DirectML.dll을 복사한다(이 앱은 AnyCPU로 빌드).

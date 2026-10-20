@@ -34,8 +34,8 @@ public static class TranslationJson
 
     private sealed record BubbleDto(int Id, RectDto Rect, double GlyphSize, bool IsVertical, string Source, string? Translation, BackgroundDto Background, RectDto? BalloonRect);
 
-    private sealed record PageDto(int SchemaVersion, string PageId, string Source, string Target, string Scope, string Mode, string ProviderRevision,
-        int AnalysisVersion, double ImageWidth, double ImageHeight, bool IsComplete, bool? SpeechLevelChecked, List<BubbleDto> Bubbles);
+    private sealed record PageDto(int SchemaVersion, string PageId, string Source, string Target, string Scope, string ProviderRevision,
+        int AnalysisVersion, double ImageWidth, double ImageHeight, bool IsComplete, List<BubbleDto> Bubbles);
 
     private sealed record AddedDto(double GlyphSize, bool IsVertical, BackgroundDto Background);
 
@@ -46,12 +46,10 @@ public static class TranslationJson
 
     public static string ScopeName(TranslationScope s) => s == TranslationScope.Strip ? "strip" : "page";
     public static TranslationScope ParseScope(string s) => s == "strip" ? TranslationScope.Strip : TranslationScope.Page;
-    public static string ModeName(TranslationMode m) => m == TranslationMode.Accurate ? "accurate" : "fast";
-    public static TranslationMode ParseMode(string s) => s == "accurate" ? TranslationMode.Accurate : TranslationMode.Fast;
 
     public static string Serialize(TranslatedPage page) => JsonSerializer.Serialize(new PageDto(
-        TranslatedPage.SchemaVersion, page.PageId, page.SourceLanguage, page.TargetLanguage, ScopeName(page.Scope), ModeName(page.Mode),
-        page.ProviderRevision, page.AnalysisVersion, page.ImageWidth, page.ImageHeight, page.IsComplete, page.SpeechLevelChecked,
+        TranslatedPage.SchemaVersion, page.PageId, page.SourceLanguage, page.TargetLanguage, ScopeName(page.Scope),
+        page.ProviderRevision, page.AnalysisVersion, page.ImageWidth, page.ImageHeight, page.IsComplete,
         page.Bubbles.Select(b => new BubbleDto(b.Id, RectDto.From(b.Rect), b.GlyphSize, b.IsVertical, b.Source, b.Translation,
             BackgroundDto.From(b.Background), b.BalloonRect is { } br ? RectDto.From(br) : null)).ToList()), Options);
 
@@ -67,13 +65,11 @@ public static class TranslationJson
             SourceLanguage = dto.Source,
             TargetLanguage = dto.Target,
             Scope = ParseScope(dto.Scope),
-            Mode = ParseMode(dto.Mode),
             ProviderRevision = dto.ProviderRevision,
             AnalysisVersion = dto.AnalysisVersion,
             ImageWidth = dto.ImageWidth,
             ImageHeight = dto.ImageHeight,
             IsComplete = dto.IsComplete,
-            SpeechLevelChecked = dto.SpeechLevelChecked,
             Bubbles = dto.Bubbles.Select(b => new TranslatedBubble
             {
                 Id = b.Id,
@@ -128,10 +124,10 @@ public static class TranslationJson
     }
 }
 
-/// <summary>캐시 identity(06 결과·캐시·말투).</summary>
-public readonly record struct TranslationCacheKey(string PageId, string Source, string Target, TranslationScope Scope, TranslationMode Mode, int AnalysisVersion, string ProviderRevision)
+/// <summary>캐시 identity. 번역 모델·프롬프트가 바뀌면 ProviderRevision이 달라져 이전 결과는 쓰지 않는다.</summary>
+public readonly record struct TranslationCacheKey(string PageId, string Source, string Target, TranslationScope Scope, int AnalysisVersion, string ProviderRevision)
 {
-    public string Identity => $"{PageId}\n{Source}>{Target}\n{TranslationJson.ScopeName(Scope)}\n{TranslationJson.ModeName(Mode)}\n{AnalysisVersion}\n{ProviderRevision}";
+    public string Identity => $"{PageId}\n{Source}>{Target}\n{TranslationJson.ScopeName(Scope)}\n{AnalysisVersion}\n{ProviderRevision}";
 }
 
 /// <summary>

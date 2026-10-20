@@ -21,7 +21,8 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.24.4" />
-    <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.1" />
+    <!-- 번역 모델(Gemma 4 GGUF)을 앱 안에서 돌리는 llama.cpp 바인딩. 네이티브 백엔드는 RID가 있는 Panely.App에서 참조한다(ADR 0008). -->
+    <PackageReference Include="LLamaSharp" Version="0.30.0" />
     <PackageReference Include="SharpCompress" Version="0.50.5" />
   </ItemGroup>
 

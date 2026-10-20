@@ -65,7 +65,6 @@ public sealed record TranslationJobInfo
     public required BookTarget Book { get; init; }
     public required string Target { get; init; }
     public string? Source { get; init; }
-    public required TranslationMode Mode { get; init; }
     public required TranslationScope Scope { get; init; }
     public required TranslationPhase Phase { get; init; }
     public TranslationStopReason Reason { get; init; }
@@ -112,13 +111,13 @@ public sealed class OpenerBookAccess(IBookOpener opener) : IBookAccess
 /// <summary>번역 설정 조회(앱 설정과 연결).</summary>
 public sealed class TranslationOptions
 {
-    public Func<TranslationMode> Mode { get; init; } = () => TranslationMode.Fast;
-    public Func<bool> MatchSpeechLevel { get; init; } = () => false;
     /// <summary>
     /// 한 번에 번역기에 보내는 풍선 수(점진 표시 단위). 여러 쪽의 풍선을 함께 묶는다.
-    /// 실측(M2M100 int8, CPU, 146문장): 쪽마다 따로 748ms/문장, 8개씩 255ms/문장.
+    /// 실측(Gemma 4 E2B, 146문장, 16개씩): Vulkan GPU 약 75ms/문장, CPU 약 620ms/문장(ADR 0003, 0008).
     /// </summary>
-    public int TranslateChunk { get; init; } = 8;
+    public int TranslateChunk { get; init; } = 16;
+    /// <summary>번역기에 문맥으로 함께 주는 직전 번역 수(말투·이름을 이어 간다).</summary>
+    public int ContextLines { get; init; } = 6;
     /// <summary>분석이 끝나 번역을 기다릴 수 있는 쪽(strip은 band) 수. 번역이 밀리면 이만큼 쌓여 묶음이 찬다.</summary>
     public int AnalysisLookahead { get; init; } = 6;
     public int PixelCacheSize { get; init; } = 4;

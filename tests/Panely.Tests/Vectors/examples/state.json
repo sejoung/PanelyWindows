@@ -13,8 +13,6 @@
     "reopenLastFolderOnLaunch": true,
     "appLanguage": "system",
     "translationEnabled": false,
-    "translationMatchesSpeechLevel": true,
-    "translationMode": "fast",
     "translationTargetLanguage": null,
     "translationOverlayVisible": true,
     "translationBalloonTipDismissed": false,

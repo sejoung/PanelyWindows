@@ -70,7 +70,7 @@ internal sealed class TranslationPanel : Border
         root.Children.Add(BuildSourceSection(source, job));
 
         // 주요 버튼
-        var capability = source is null ? null : services.Providers.Packs.GetCapability(source, target, services.State.Settings.TranslationMode);
+        var capability = source is null ? null : services.Providers.Packs.GetCapability(source, target);
         Button primary;
         if (job is { IsRunningOrQueued: true })
             primary = Ui.Button("❚❚  " + Loc.T("Pause Translating"), () => _f.PauseLanguage(target));
@@ -338,13 +338,6 @@ internal sealed class TranslationPanel : Border
     {
         var state = _f.Service.State;
         var menu = new ContextMenu { PlacementTarget = this, Placement = PlacementMode.Relative, HorizontalOffset = Width - 200, VerticalOffset = 44 };
-        var modeHeader = new MenuItem { Header = Loc.T("Translation Mode") };
-        modeHeader.Items.Add(Ui.MenuItem(Loc.T("Fast"), () => state.UpdateSettings(s => s.TranslationMode = TranslationMode.Fast), isChecked: state.Settings.TranslationMode == TranslationMode.Fast));
-        modeHeader.Items.Add(Ui.MenuItem(Loc.T("Accurate"), () => state.UpdateSettings(s => s.TranslationMode = TranslationMode.Accurate), isChecked: state.Settings.TranslationMode == TranslationMode.Accurate));
-        menu.Items.Add(modeHeader);
-        var speech = _f.Service.Providers.SpeechLevel.GetCapability(TranslationLanguages.Japanese, TranslationLanguages.Korean);
-        menu.Items.Add(Ui.MenuItem(Loc.T("Match Speech Level"), () => state.UpdateSettings(s => s.TranslationMatchesSpeechLevel = !s.TranslationMatchesSpeechLevel),
-            enabled: speech.IsReady, isChecked: speech.IsReady && state.Settings.TranslationMatchesSpeechLevel, tooltip: speech.Reason));
         var lang = new MenuItem { Header = Loc.T("Default Language") };
         foreach (var l in TranslationLanguages.All)
             lang.Items.Add(Ui.MenuItem(Loc.LanguageName(l), () => state.UpdateSettings(s => s.TranslationTargetLanguage = l), isChecked: state.Settings.TranslationTargetLanguage == l));
@@ -357,7 +350,7 @@ internal sealed class TranslationPanel : Border
     private async Task DownloadAsync(string source, string target)
     {
         var packs = _f.Service.Providers.Packs;
-        var missing = packs.MissingPacks(source, target, _f.Service.State.Settings.TranslationMode);
+        var missing = packs.MissingPacks(source, target);
         try
         {
             foreach (var pack in missing) await packs.InstallAsync(pack, null, CancellationToken.None);

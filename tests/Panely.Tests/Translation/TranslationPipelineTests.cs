@@ -4,21 +4,23 @@ using Panely.Domain.Translation;
 
 namespace Panely.Tests.Translation;
 
-/// <summary>원문 앞에 "T:"를 붙여 돌려주고 호출마다 받은 문장 수를 남기는 번역기. Hold가 있으면 첫 호출이 그 조건을 기다린다.</summary>
+/// <summary>원문 앞에 "T:"를 붙여 돌려주고 호출마다 받은 문장 수·문맥을 남기는 번역기. Hold가 있으면 첫 호출이 그 조건을 기다린다.</summary>
 internal sealed class RecordingTranslator : ITranslator
 {
     private int _calls;
     public List<int> Batches { get; } = [];
+    public List<IReadOnlyList<TranslationContextLine>> Contexts { get; } = [];
     public Func<bool>? Hold { get; set; }
     public Exception? Throw { get; set; }
     public string Name => "recording";
-    public string Revision(TranslationMode mode) => "recording@1";
-    public Capability GetCapability(string source, string target, TranslationMode mode) => Capability.Ready;
+    public string Revision => "recording@1";
+    public Capability GetCapability(string source, string target) => Capability.Ready;
 
-    public async Task<IReadOnlyList<TranslationResultItem>> TranslateAsync(IReadOnlyList<TranslationRequestItem> items, string source, string target, TranslationMode mode, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<TranslationResultItem>> TranslateAsync(IReadOnlyList<TranslationRequestItem> items, IReadOnlyList<TranslationContextLine> context,
+        string source, string target, CancellationToken cancellationToken)
     {
         if (Throw is not null) throw Throw;
-        lock (Batches) Batches.Add(items.Count);
+        lock (Batches) { Batches.Add(items.Count); Contexts.Add(context); }
         if (Interlocked.Increment(ref _calls) == 1 && Hold is { } hold)
         {
             await Wait.UntilAsync(hold);
@@ -50,8 +52,29 @@ public class TranslationPipelineTests
         }
         for (var p = 0; p < 6; p++)
         {
-            var page = scheduler.LoadCached(book.Pages[p].PageId, "ja", "ko", TranslationScope.Page, TranslationMode.Fast)!;
+            var page = scheduler.LoadCached(book.Pages[p].PageId, "ja", "ko", TranslationScope.Page)!;
             Assert.Equal($"T:こんにちは{p}", Assert.Single(page.Bubbles).Translation);
+        }
+    }
+
+    [Fact]
+    public async Task EarlierTranslationsGoToTheTranslatorAsContext()
+    {
+        // 말투·이름을 이어 가도록 이 작업에서 직전에 번역한 풍선을 ContextLines개까지 함께 넘긴다
+        using var dir = new TempDir();
+        var translator = new RecordingTranslator();
+        var book = FakeBooks.Create(4);
+        var options = new TranslationOptions { TranslateChunk = 1, ContextLines = 2 };
+        await using var scheduler = new TranslationScheduler(FakeProviders.Create(new FakeRecognizer(), translator), new TranslationCache(dir.Path), new FakePixels(), new FakeBookAccess(() => FakeBooks.Create(4)), options);
+        scheduler.Start(BookTarget.From(book), "ko", "ja", TranslationScope.Page);
+        await Wait.UntilAsync(() => scheduler.Get(book.BookKey, "ko")?.Phase is TranslationPhase.Completed or TranslationPhase.Failed);
+
+        lock (translator.Batches)
+        {
+            Assert.Equal(4, translator.Contexts.Count);
+            Assert.Empty(translator.Contexts[0]);
+            Assert.Equal(new TranslationContextLine("こんにちは0", "T:こんにちは0"), Assert.Single(translator.Contexts[1]));
+            Assert.Equal(["こんにちは1", "こんにちは2"], translator.Contexts[3].Select(c => c.Source));
         }
     }
 
@@ -90,7 +113,7 @@ public class TranslationPipelineTests
         await Wait.UntilAsync(() => scheduler.Get(book.BookKey, "ko")?.Phase is TranslationPhase.Completed or TranslationPhase.Failed);
 
         Assert.Equal(TranslationPhase.Completed, scheduler.Get(book.BookKey, "ko")!.Phase);
-        var page3 = scheduler.LoadCached(book.Pages[3].PageId, "ja", "ko", TranslationScope.Strip, TranslationMode.Fast)!;
+        var page3 = scheduler.LoadCached(book.Pages[3].PageId, "ja", "ko", TranslationScope.Strip)!;
         Assert.Equal(2, page3.Bubbles.Count);
         Assert.All(page3.Bubbles, b => Assert.Equal("T:" + b.Source, b.Translation));
         Assert.Equal([0, 1], page3.Bubbles.Select(b => b.Id));

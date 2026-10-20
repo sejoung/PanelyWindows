@@ -4,20 +4,6 @@ using Panely.Domain.Translation;
 
 namespace Panely.Core.Translation;
 
-/// <summary>
-/// 말투 보정: Windows에는 검증된 로컬 보존형 rewrite 경로가 아직 없다.
-/// 옵션을 효과 있는 것처럼 켜두지 않고 준비 불가 사유를 표시한다(06 결과·캐시·말투).
-/// </summary>
-public sealed class UnavailableSpeechLevelCorrector : ISpeechLevelCorrector
-{
-    public static string Reason => Loc.T("Speech-level matching needs a verified on-device rewriting model, which this Windows build doesn't include yet. Translations are shown as the translation model produced them.");
-
-    public Capability GetCapability(string source, string target) => Capability.Unavailable(Reason);
-
-    public Task<SpeechLevelResult> CorrectAsync(string original, string translation, string source, string target, CancellationToken cancellationToken)
-        => Task.FromResult(new SpeechLevelResult(SpeechLevelOutcome.Unchanged, translation));
-}
-
 /// <summary>공급자 이름 표시용 상수.</summary>
 public static class DeveloperProviders
 {
@@ -37,12 +23,13 @@ public sealed class PseudoTranslator : ITranslator
     public string Name => DeveloperProviders.Label;
     public TimeSpan Delay { get; init; } = TimeSpan.FromMilliseconds(40);
 
-    public string Revision(TranslationMode mode) => $"pseudo-{mode.ToString().ToLowerInvariant()}-1";
+    public string Revision => "pseudo-1";
 
-    public Capability GetCapability(string source, string target, TranslationMode mode) =>
+    public Capability GetCapability(string source, string target) =>
         source == target ? Capability.Unavailable(Loc.T("This language pair isn't supported")) : Capability.Ready;
 
-    public async Task<IReadOnlyList<TranslationResultItem>> TranslateAsync(IReadOnlyList<TranslationRequestItem> items, string source, string target, TranslationMode mode, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<TranslationResultItem>> TranslateAsync(IReadOnlyList<TranslationRequestItem> items, IReadOnlyList<TranslationContextLine> context,
+        string source, string target, CancellationToken cancellationToken)
     {
         var list = new List<TranslationResultItem>();
         foreach (var item in items.Reverse())

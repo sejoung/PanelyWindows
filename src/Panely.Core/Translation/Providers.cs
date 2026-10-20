@@ -7,7 +7,7 @@ namespace Panely.Core.Translation;
 public enum CapabilityStatus { Supported, Installed, Downloading, Unavailable }
 
 /// <summary>
-/// capability(source,target,mode) 결과. Supported = 지원하지만 팩 설치 필요, Installed = 바로 실행 가능.
+/// capability(source,target) 결과. Supported = 지원하지만 팩 설치 필요, Installed = 바로 실행 가능.
 /// Reason은 Unavailable/Supported일 때 사용자에게 보여줄 문구(이미 현지화된 문장).
 /// </summary>
 public sealed record Capability(CapabilityStatus Status, string? Reason = null, double? Progress = null)
@@ -26,10 +26,10 @@ public readonly record struct InstallProgress(long BytesDone, long BytesTotal, s
 /// <summary>언어팩(모델 패키지) 공급자.</summary>
 public interface ILanguagePackProvider
 {
-    Capability GetCapability(string source, string target, TranslationMode mode);
+    Capability GetCapability(string source, string target);
 
     /// <summary>필요한 팩 ID 목록(설치 안 된 것만).</summary>
-    IReadOnlyList<string> MissingPacks(string source, string target, TranslationMode mode);
+    IReadOnlyList<string> MissingPacks(string source, string target);
 
     /// <summary>임시 파일 → checksum 검증 → publish. 검증되지 않은 manifest는 설치를 거부한다.</summary>
     Task InstallAsync(string packId, IProgress<InstallProgress>? progress, CancellationToken cancellationToken);
@@ -144,6 +144,9 @@ public interface IBalloonDetector
 
 public sealed record TranslationRequestItem(string Id, string Text);
 
+/// <summary>앞서 번역한 말풍선(읽는 순서). 번역기가 말투·이름을 이어 가는 데만 쓴다.</summary>
+public sealed record TranslationContextLine(string Source, string Translation);
+
 /// <summary>Text 또는 Error 중 하나.</summary>
 public sealed record TranslationResultItem(string Id, string? Text, string? Error = null);
 
@@ -151,21 +154,17 @@ public sealed record TranslationResultItem(string Id, string? Text, string? Erro
 public interface ITranslator
 {
     string Name { get; }
-    /// <summary>캐시 identity용 provider/model revision(모드별로 다를 수 있음).</summary>
-    string Revision(TranslationMode mode);
-    Capability GetCapability(string source, string target, TranslationMode mode);
-    Task<IReadOnlyList<TranslationResultItem>> TranslateAsync(IReadOnlyList<TranslationRequestItem> items, string source, string target, TranslationMode mode, CancellationToken cancellationToken);
-}
-
-public enum SpeechLevelOutcome { Candidate, Unchanged }
-
-public sealed record SpeechLevelResult(SpeechLevelOutcome Outcome, string Text);
-
-/// <summary>ja↔ko 말투 보정(선택적 로컬 후처리).</summary>
-public interface ISpeechLevelCorrector
-{
+    /// <summary>캐시 identity용 provider/model revision.</summary>
+    string Revision { get; }
     Capability GetCapability(string source, string target);
-    Task<SpeechLevelResult> CorrectAsync(string original, string translation, string source, string target, CancellationToken cancellationToken);
+    /// <summary>items는 읽는 순서. context는 그 앞에서 이미 번역한 말풍선(없으면 빈 목록).</summary>
+    Task<IReadOnlyList<TranslationResultItem>> TranslateAsync(IReadOnlyList<TranslationRequestItem> items, IReadOnlyList<TranslationContextLine> context,
+        string source, string target, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// 모델을 미리 올린다(번역 작업이 시작될 때 분석과 함께 부른다). 첫 결과가 늦어지지 않게 하려는 것이며 실패해도 무시해도 된다.
+    /// </summary>
+    Task PrepareAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
 /// <summary>앱에 연결된 공급자 묶음.</summary>
@@ -175,7 +174,6 @@ public sealed class TranslationProviders
     public required ITextRecognizer Recognizer { get; init; }
     public required IBalloonDetector Detector { get; init; }
     public required ITranslator Translator { get; init; }
-    public required ISpeechLevelCorrector SpeechLevel { get; init; }
     /// <summary>개발용 가짜 공급자 사용 중(PANELY_DEV_PSEUDO_TRANSLATION=1).</summary>
     public bool IsDeveloperTestProvider { get; init; }
 }

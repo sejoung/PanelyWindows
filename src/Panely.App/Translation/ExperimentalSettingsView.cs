@@ -9,7 +9,7 @@ using Panely.Domain.Model;
 namespace Panely.App.Translation;
 
 /// <summary>
-/// 설정 창 "실험" 탭: 번역 보조, 기본 언어, Fast/Accurate(실제 능력), 말투 맞춤(사용 불가 사유), 언어팩·OCR 상태,
+/// 설정 창 "실험" 탭: 번역 보조, 기본 언어, 번역 모델(설치·실행 장치), 언어팩·OCR 상태, GPU 가속,
 /// 수정 쪽 수·전체 수정 삭제, 번역 캐시 용량·삭제.
 /// </summary>
 internal sealed class ExperimentalSettingsView : UserControl
@@ -74,26 +74,10 @@ internal sealed class ExperimentalSettingsView : UserControl
         _root.Children.Add(Gap(Ui.Combo(options, settings.TranslationTargetLanguage, v => state.UpdateSettings(s => s.TranslationTargetLanguage = v)), 4));
         _root.Children.Add(Gap(Ui.Caption(Loc.T("The default language is what new series are shown in. Each series can be shown in another language, and each book's own language is detected the first time it's translated — both from the translation button in the toolbar, remembered per series.")), 4));
 
-        // 모드
-        _root.Children.Add(Gap(Ui.Section(Loc.T("Translation Mode")), 18));
-        foreach (var mode in new[] { TranslationMode.Fast, TranslationMode.Accurate })
-        {
-            var label = mode == TranslationMode.Fast ? Loc.T("Fast") : Loc.T("Accurate");
-            _root.Children.Add(Gap(Ui.Radio(label, "tr-mode", settings.TranslationMode == mode, () => state.UpdateSettings(s => s.TranslationMode = mode)), 4));
-            _root.Children.Add(Ui.Caption("   " + ModeCapability(mode)));
-            // Accurate(fp32) 실측: 메모리 약 2GB 더, 조금 느림. 나란히 비교한 평가로는 훨씬 나음(골든 세트 미검수)(ModelManifest validation, IMPLEMENTATION-STATUS)
-            if (mode == TranslationMode.Accurate)
-                _root.Children.Add(Ui.Caption("   " + Loc.T("Uses about 2 GB more memory than Fast and runs a little slower. In a side-by-side review its translations read much better, though it hasn't been checked against a reference set. The language pack is 2.3 GB.")));
-        }
-        _root.Children.Add(Gap(Ui.Caption(Loc.T("Fast uses a smaller, quantized model; Accurate uses the full-precision model with a wider search and takes longer. Each mode downloads its own language pack.")), 4));
-
-        // 말투
-        var speech = service.Providers.SpeechLevel.GetCapability(TranslationLanguages.Japanese, TranslationLanguages.Korean);
-        var speechToggle = Ui.Toggle(Loc.T("Match Speech Level"), speech.IsReady && settings.TranslationMatchesSpeechLevel,
-            on => state.UpdateSettings(s => s.TranslationMatchesSpeechLevel = on), switchStyle: true);
-        speechToggle.IsEnabled = speech.IsReady;
-        _root.Children.Add(Gap(speechToggle, 18));
-        _root.Children.Add(Gap(Ui.Caption(speech.IsReady ? Loc.T("Japanese ↔ Korean: endings are rewritten to match the original's speech level; a rewrite is used only if it keeps the same words.") : speech.Reason ?? string.Empty), 4));
+        // 번역 모델(Gemma 4 E2B 하나, ADR 0008)
+        _root.Children.Add(Gap(Ui.Section(Loc.T("Translation Model")), 18));
+        _root.Children.Add(Gap(Ui.Text(TranslatorStatus(), "Text.Body"), 4));
+        _root.Children.Add(Gap(Ui.Caption(Loc.T("Gemma 4 E2B translates a few balloons at a time together with the lines before them, so it keeps each speaker's speech level and names. It uses the GPU when one is available; on a PC without a usable GPU it runs on the CPU and is several times slower.")), 4));
 
         // 언어팩
         _root.Children.Add(Gap(Ui.Section(Loc.T("Language Packs")), 18));
@@ -110,11 +94,14 @@ internal sealed class ExperimentalSettingsView : UserControl
                 : cap.Reason ?? Loc.T("Language pack not installed");
             _root.Children.Add(Gap(Ui.Caption($"{Loc.LanguageName(lang)} — {engineState}"), 4));
         }
-        // 가속: 실측 결과에 따라 말풍선 탐지만 GPU(DirectML)를 쓰고, int8 OCR·번역은 CPU가 더 빨랐다
-        var gpu = OnnxSessions.GpuDisabledByUser ? Loc.T("off (PANELY_ORT_DEVICE=cpu)")
-            : OnnxSessions.GpuFailure is { } failure ? Loc.T("unavailable: %@", failure)
-            : "DirectML";
-        _root.Children.Add(Gap(Ui.Caption(Loc.T("GPU acceleration: balloon detection uses the GPU (%@). Text recognition and translation run on the CPU, which measured faster for these quantized models.", gpu)), 8));
+        // 가속: 말풍선 탐지는 DirectML, 번역은 Vulkan(없으면 CPU). int8 글자 인식은 CPU가 더 빨랐다(ADR 0003)
+        if (OnnxSessions.GpuDisabledByUser)
+            _root.Children.Add(Gap(Ui.Caption(Loc.T("GPU acceleration is off (PANELY_ORT_DEVICE=cpu): balloon detection, text recognition and translation run on the CPU.")), 8));
+        else
+        {
+            var gpu = OnnxSessions.GpuFailure is { } failure ? Loc.T("unavailable: %@", failure) : "DirectML";
+            _root.Children.Add(Gap(Ui.Caption(Loc.T("GPU acceleration: balloon detection uses the GPU (%@) and translation uses it through Vulkan when available. Text recognition runs on the CPU, which measured faster for these quantized models.", gpu)), 8));
+        }
 
         // 수정
         _root.Children.Add(Gap(Ui.Section(Loc.T("Your Edits")), 18));
@@ -153,11 +140,10 @@ internal sealed class ExperimentalSettingsView : UserControl
         }, TaskScheduler.FromCurrentSynchronizationContext());
     }
 
-    private string ModeCapability(TranslationMode mode)
+    private string TranslatorStatus()
     {
         var service = _f.Service;
-        var id = LanguagePackManager.TranslatorPackFor(mode);
-        var m = service.Models.Find(id);
+        var m = service.Models.Find(ModelCatalog.TranslatorId);
         if (service.Providers.IsDeveloperTestProvider) return DeveloperProviders.Label;
         if (m is null) return Loc.T("Not Supported");
         if (service.Models.IsInstalled(m)) return Loc.T("Installed") + " · " + service.Providers.Translator.Name;
@@ -170,8 +156,7 @@ internal sealed class ExperimentalSettingsView : UserControl
         ModelCatalog.DetectorId => Loc.T("Balloon detection (RT-DETR)"),
         ModelCatalog.MangaOcrId => Loc.T("Japanese text recognition (manga-ocr)"),
         ModelCatalog.PpOcrId => Loc.T("Chinese, English and Korean text recognition, language detection (PP-OCRv5)"),
-        ModelCatalog.TranslatorFastId => Loc.T("Translation — Fast (M2M100, int8)"),
-        ModelCatalog.TranslatorAccurateId => Loc.T("Translation — Accurate (M2M100, fp32)"),
+        ModelCatalog.TranslatorId => Loc.T("Translation (Gemma 4 E2B)"),
         _ => id,
     };
 

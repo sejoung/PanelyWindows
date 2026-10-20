@@ -9,7 +9,6 @@ public sealed class AppSettings
     public ReadingDirection Direction { get; set; } = ReadingDirection.LeftToRight;
     public FitMode FitMode { get; set; } = FitMode.FitScreen;
     public AppLanguage AppLanguage { get; set; } = AppLanguage.System;
-    public TranslationMode TranslationMode { get; set; } = TranslationMode.Fast;
     public string? TranslationTargetLanguage { get; set; }
     public LogLevel LogLevel { get; set; } = LogLevel.Info;
     public bool SidebarPinned { get; set; } = true;
@@ -20,7 +19,6 @@ public sealed class AppSettings
     public bool WheelPageTurn { get; set; } = true;
     public bool ReopenLastFolderOnLaunch { get; set; } = true;
     public bool TranslationEnabled { get; set; }
-    public bool TranslationMatchesSpeechLevel { get; set; } = true;
     public bool TranslationOverlayVisible { get; set; } = true;
     public bool TranslationBalloonTipDismissed { get; set; }
     public bool LibraryAutoRefreshEnabled { get; set; } = true;

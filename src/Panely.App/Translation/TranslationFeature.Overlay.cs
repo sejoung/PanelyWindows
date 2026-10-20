@@ -407,7 +407,7 @@ public sealed partial class TranslationFeature
         if (_book is null || _source is null) return list;
         foreach (var lang in TranslationLanguages.All.Where(l => l != _source && l != _visible && CompletedPages(l) > 0))
         {
-            var cached = Service.Scheduler.LoadCached(_book.Pages[page].PageId, _source, lang, CurrentScope, Mode);
+            var cached = Service.Scheduler.LoadCached(_book.Pages[page].PageId, _source, lang, CurrentScope);
             if (cached is null) continue;
             var edits = Service.Edits.Get(_book.Pages[page].PageId, CurrentScope);
             var match = EditResolver.Resolve(cached.Bubbles, edits, lang)

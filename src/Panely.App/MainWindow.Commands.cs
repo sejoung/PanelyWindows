@@ -236,7 +236,6 @@ public partial class MainWindow
             ["wheelPageTurn"] = s.WheelPageTurn.ToString(),
             ["reopenLastFolderOnLaunch"] = s.ReopenLastFolderOnLaunch.ToString(),
             ["translationEnabled"] = s.TranslationEnabled.ToString(),
-            ["translationMode"] = s.TranslationMode.ToString(),
             ["logLevel"] = s.LogLevel.ToString(),
             ["libraryAutoRefreshEnabled"] = s.LibraryAutoRefreshEnabled.ToString(),
         };

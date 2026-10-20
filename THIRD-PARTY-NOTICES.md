@@ -9,7 +9,7 @@ Panely Windows는 아래 구성 요소를 사용합니다. 각 구성 요소의 
 | [SharpCompress](https://github.com/adamhathcock/sharpcompress) | 0.50.5 | MIT | RAR 4/5·solid RAR 읽기 |
 | [Microsoft.ML.OnnxRuntime.DirectML](https://github.com/microsoft/onnxruntime) | 1.24.4 | MIT | 모델 추론(CPU + DirectML GPU) |
 | [Microsoft.AI.DirectML](https://www.nuget.org/packages/Microsoft.AI.DirectML) | 1.15.4 | Microsoft DirectML License(재배포 허용) | GPU 추론용 `DirectML.dll` |
-| [Microsoft.ML.Tokenizers](https://github.com/dotnet/machinelearning) | 2.0.1 | MIT | M2M100 SentencePiece 토크나이저 |
+| [LLamaSharp](https://github.com/SciSharp/LLamaSharp) · LLamaSharp.Backend.Cpu · LLamaSharp.Backend.Vulkan.Windows | 0.30.0 | MIT (포함된 [llama.cpp](https://github.com/ggml-org/llama.cpp)·ggml도 MIT) | 번역 모델(GGUF) 실행. CPU, Vulkan GPU |
 | [Magick.NET-Q8-AnyCPU](https://github.com/dlemstra/Magick.NET) | 15.0.0 | Apache-2.0 (ImageMagick License 포함) | WIC 코덱이 없는 PC에서 HEIC/WebP 등 대체 디코딩 |
 | .NET 10 런타임·WPF (self-contained 게시 시 포함) | 10.0 | MIT | 런타임·UI |
 
@@ -20,7 +20,7 @@ Panely Windows는 아래 구성 요소를 사용합니다. 각 구성 요소의 
 | 모델 | 고정 revision | 라이선스 |
 |---|---|---|
 | [ogkalu/comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) `detector.onnx` | `16e8a622f91fabc6b5b65c96d32d1183f8843546` | Apache-2.0 (모델 카드) |
-| [Xenova/m2m100_418M](https://huggingface.co/Xenova/m2m100_418M) ONNX (Fast: quantized, Accurate: fp32, KV 캐시 merged decoder) | `9c374f0b7aca709787cea97b047bfbbd1559d177` | 원본 가중치 [facebook/m2m100_418M](https://huggingface.co/facebook/m2m100_418M) MIT. ONNX 변환 저장소에는 별도 라이선스 표기가 없음 |
+| [google/gemma-4-E2B-it-qat-q4_0-gguf](https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf) `gemma-4-E2B_q4_0-it.gguf` (번역) | `675cff42a74c774d6cb76f76d8eacb49b48c9b93` | Apache-2.0 (Gemma 4, 모델 카드) |
 | [ogkalu/manga-ocr-onnx](https://huggingface.co/ogkalu/manga-ocr-onnx) (일본어 OCR, int8) | `c68e56437a2e0b13a7b1f4efa0ffce76efd0478d` | Apache-2.0 (원본 [kha-white/manga-ocr-base](https://huggingface.co/kha-white/manga-ocr-base) Apache-2.0) |
 | [ogkalu/ppocr-v5-onnx](https://huggingface.co/ogkalu/ppocr-v5-onnx) (PP-OCRv5 mobile 탐지 + 중국어/영어/한국어 인식) | `3b76726c3606c4af92f5133b359ed14e0d30a455` | Apache-2.0 (원본 [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) Apache-2.0) |
 

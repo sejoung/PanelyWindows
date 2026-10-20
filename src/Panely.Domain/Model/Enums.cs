@@ -8,8 +8,6 @@ public enum FitMode { FitScreen, FitWidth, FitHeight }
 
 public enum AppLanguage { System, En, Ko }
 
-public enum TranslationMode { Fast, Accurate }
-
 public enum ExportFormat { Cbz, Zip, Folder }
 
 public enum UntranslatedPolicy { TranslateFirst, ExportAsIs }
