@@ -6,12 +6,16 @@
 
 **A fast, offline comic and manga reader for Windows — with experimental on-device balloon translation.**
 
-[![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4?logo=windows&logoColor=white)](#requirements)
+[![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4)](#requirements)
 [![.NET](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/download/dotnet/10.0)
 [![UI](https://img.shields.io/badge/UI-WPF-5C2D91)](#project-layout)
 [![ONNX Runtime](https://img.shields.io/badge/ONNX%20Runtime-DirectML-005CED?logo=onnx&logoColor=white)](#translation-experimental)
-[![Translation](https://img.shields.io/badge/translation-on--device-2EA44F)](#translation-experimental)
+[![llama.cpp](https://img.shields.io/badge/llama.cpp-Vulkan-1F6FEB)](#translation-experimental)
+[![Translation](https://img.shields.io/badge/translation-Gemma%204%20E2B%20%C2%B7%20on--device-2EA44F)](#translation-experimental)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/sejoung/PanelyWindows?logo=github&label=release)](https://github.com/sejoung/PanelyWindows/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/sejoung/PanelyWindows/total?logo=github&label=downloads)](https://github.com/sejoung/PanelyWindows/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/sejoung/PanelyWindows/ci.yml?branch=main&logo=github&label=CI)](https://github.com/sejoung/PanelyWindows/actions/workflows/ci.yml)
 
 **English** · [한국어](README.ko.md)
 

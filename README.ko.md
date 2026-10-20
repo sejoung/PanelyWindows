@@ -6,12 +6,16 @@
 
 **빠르고 오프라인으로 동작하는 Windows용 만화·망가 리더. 기기 안에서 말풍선을 번역하는 실험 기능을 함께 제공합니다.**
 
-[![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4?logo=windows&logoColor=white)](#요구-사항)
+[![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4)](#요구-사항)
 [![.NET](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/download/dotnet/10.0)
 [![UI](https://img.shields.io/badge/UI-WPF-5C2D91)](#프로젝트-구성)
 [![ONNX Runtime](https://img.shields.io/badge/ONNX%20Runtime-DirectML-005CED?logo=onnx&logoColor=white)](#번역실험-기능)
-[![Translation](https://img.shields.io/badge/translation-on--device-2EA44F)](#번역실험-기능)
+[![llama.cpp](https://img.shields.io/badge/llama.cpp-Vulkan-1F6FEB)](#번역실험-기능)
+[![Translation](https://img.shields.io/badge/translation-Gemma%204%20E2B%20%C2%B7%20on--device-2EA44F)](#번역실험-기능)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/sejoung/PanelyWindows?logo=github&label=release)](https://github.com/sejoung/PanelyWindows/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/sejoung/PanelyWindows/total?logo=github&label=downloads)](https://github.com/sejoung/PanelyWindows/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/sejoung/PanelyWindows/ci.yml?branch=main&logo=github&label=CI)](https://github.com/sejoung/PanelyWindows/actions/workflows/ci.yml)
 
 [English](README.md) · **한국어**
 
