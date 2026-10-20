@@ -1,6 +1,10 @@
 ﻿# tools/*.ps1 공용 함수. 직접 실행하지 않고 dot-source 한다:  . "$PSScriptRoot\_common.ps1"
 
 $ErrorActionPreference = 'Stop'
+# dotnet CLI는 한국어 메시지를 UTF-8로 낸다. Windows PowerShell 5.1은 파이프로 받은 외부 프로그램 출력을
+# 콘솔 코드 페이지(CP949)로 해석해 한글이 깨지므로 UTF-8로 맞춘다. 콘솔 코드 페이지도 65001로 바뀌는데,
+# 루트의 .cmd 래퍼가 끝날 때 원래 코드 페이지로 되돌린다.
+try { [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false) } catch { }
 $script:RepoRoot = Split-Path -Parent $PSScriptRoot
 $script:AppProject = Join-Path $script:RepoRoot 'src\Panely.App\Panely.App.csproj'
 $script:SolutionFile = Join-Path $script:RepoRoot 'Panely.sln'
