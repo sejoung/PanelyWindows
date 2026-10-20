@@ -67,6 +67,7 @@ The app isn't code-signed yet, so the first launch may show "Windows protected y
 ### Updating and uninstalling
 
 - **Update**: close Panely and replace the folder's contents with the new ZIP. Your library, reading positions and language packs live in your user data folder, not the app folder, so they're kept.
+  - **From 1.0.x to 1.1**: the translation model changed, so the old translation packs (Fast and Accurate) are deleted automatically and the new translation pack (3.1 GB) has to be downloaded. Books translated with 1.0.x need translating again; your own edits are kept (see [section 6](#6-getting-started-with-translation)).
 - **If you moved the app folder**: the "Open with Panely" entry points at the old `Panely.exe` path. Add it again in **Settings › General › File Explorer**.
 - **Uninstall**: if you added "Open with Panely", click **Settings › General › Remove from File Explorer** first. Then delete the app folder.
 - **Remove your data too**: delete `%LOCALAPPDATA%\Panely`. This removes your settings, reading positions, bookmarks, favorites, translations and language packs. See [section 8](#8-settings-and-your-data).
@@ -431,10 +432,10 @@ The translation model runs on the GPU (Vulkan) when there is one, and on the CPU
 | Device | One balloon | 298-page webtoon (146 balloons), whole book | First translation shown |
 |---|---|---|---|
 | GPU (RTX 4070 Ti SUPER) | about 0.1 s | about 58 s | about 10 s |
-| CPU only (Core i7-13700K) | about 0.6 s | about 325 s (5 min 25 s) | about 15 s |
+| CPU only (Core i7-13700K; detection, recognition and translation all on the CPU) | about 0.6 s | about 325 s (5 min 25 s) | about 15 s |
 
 - These were measured once on the development PC. Slower CPUs, fewer cores and laptop power-saving modes take longer.
-- Balloon detection and text recognition also run on the CPU then, so the number of pages matters as well as the number of balloons.
+- With no GPU at all, or with the GPU turned off, balloon detection runs on the CPU too, so the number of pages matters as well as the number of balloons. If only Vulkan is missing, balloon detection still uses the GPU (DirectX 12) and can be faster than the table.
 - Panely runs on the CPU in these cases:
   - the PC has no GPU
   - an older GPU without a Vulkan driver
