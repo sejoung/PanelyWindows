@@ -15,6 +15,8 @@
 
 **English** · [한국어](README.ko.md)
 
+On a Mac? See [Panely for macOS](https://github.com/sejoung/Panely).
+
 <img src="docs/images/reader-en.png" alt="Panely reading a two-page spread with the library sidebar and page thumbnails" width="860">
 
 </div>
@@ -203,6 +205,6 @@ Issues and pull requests are welcome. Please run `verify.cmd` before opening a p
 
 Panely for Windows is licensed under the [Apache License 2.0](LICENSE).
 
-The app icon, string catalog and screen design come from the original Panely (Apache-2.0, see [`assets/LICENSE-original.txt`](assets/LICENSE-original.txt)). The OCR pipeline follows [comic-translate](https://github.com/ogkalu2/comic-translate). Libraries and models are listed with their licenses in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md); models are downloaded by the user and are not redistributed.
+The app icon, string catalog and screen design come from the original [Panely for macOS](https://github.com/sejoung/Panely) (Apache-2.0, see [`assets/LICENSE-original.txt`](assets/LICENSE-original.txt)). The OCR pipeline follows [comic-translate](https://github.com/ogkalu2/comic-translate). Libraries and models are listed with their licenses in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md); models are downloaded by the user and are not redistributed.
 
 The screenshots use a synthetic demo comic made for this README.

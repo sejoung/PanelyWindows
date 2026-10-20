@@ -15,6 +15,8 @@
 
 [English](README.md) · **한국어**
 
+Mac을 쓰시나요? [macOS용 Panely](https://github.com/sejoung/Panely)를 보세요.
+
 <img src="docs/images/reader-ko.png" alt="라이브러리와 썸네일을 켜고 두 쪽 펼침으로 읽는 Panely 화면" width="860">
 
 </div>
@@ -203,6 +205,6 @@ powershell -ExecutionPolicy Bypass -File tools\readme-screenshots.ps1           
 
 Panely for Windows는 [Apache License 2.0](LICENSE)을 따릅니다.
 
-앱 아이콘, 문구 카탈로그, 화면 디자인은 원본 Panely의 자산입니다(Apache-2.0, [`assets/LICENSE-original.txt`](assets/LICENSE-original.txt)). 글자 인식 구성은 [comic-translate](https://github.com/ogkalu2/comic-translate)를 참고했습니다. 사용한 라이브러리와 모델의 라이선스는 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)에 정리했습니다. 모델은 사용자가 직접 내려받으며 이 저장소가 재배포하지 않습니다.
+앱 아이콘, 문구 카탈로그, 화면 디자인은 원본인 [macOS용 Panely](https://github.com/sejoung/Panely)의 자산입니다(Apache-2.0, [`assets/LICENSE-original.txt`](assets/LICENSE-original.txt)). 글자 인식 구성은 [comic-translate](https://github.com/ogkalu2/comic-translate)를 참고했습니다. 사용한 라이브러리와 모델의 라이선스는 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)에 정리했습니다. 모델은 사용자가 직접 내려받으며 이 저장소가 재배포하지 않습니다.
 
 스크린샷은 이 README를 위해 만든 합성 데모 만화를 사용했습니다.
