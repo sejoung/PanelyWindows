@@ -149,6 +149,7 @@ The `.cmd` files in the repository root pass their arguments to the matching `to
 | `build.cmd` | Build the solution and run the tests (`-Configuration Release`, `-SkipTests`, `-Filter Translation`, `-Clean`) |
 | `install-local.cmd` | Build, test, publish and install locally, then launch (`-SkipTests`, `-Samples`, `-Isolated`, `-Open <path>`) |
 | `uninstall-local.cmd` | Remove the local install (`-RemoveDevData`, `-RemoveData`) |
+| `release.cmd` | Verify, bump `VersionPrefix`, commit, tag and push from `main` (`patch`, `minor`, `major` or `X.Y.Z`; `-DryRun`, `-SkipVerify`, `-Yes`) |
 
 Run `verify.cmd` before sending a change (about 40 seconds; `-Quick` skips the smoke tests). Style rules live in `.editorconfig`, and analyzer warnings fail the build.
 

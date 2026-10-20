@@ -1,0 +1,89 @@
+# v*.*.* 태그가 push되면 검증 → win-x64/win-arm64 게시 → GitHub 릴리스 생성.
+# 태그는 tools\release.ps1(release.cmd)이 Directory.Build.props의 VersionPrefix와 맞춰 만든다.
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+
+jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: verify
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        runtime: [win-x64, win-arm64]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Build.props', 'global.json') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Check tag matches VersionPrefix
+        id: version
+        shell: powershell
+        run: |
+          $version = ([xml](Get-Content Directory.Build.props -Raw)).Project.PropertyGroup.VersionPrefix | Where-Object { $_ } | Select-Object -First 1
+          $tag = '${{ github.ref_name }}'
+          if ("v$version" -ne $tag) { throw "태그 $tag 와 Directory.Build.props VersionPrefix $version 가 다릅니다." }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Publish
+        shell: powershell
+        run: >
+          powershell -NoProfile -ExecutionPolicy Bypass -File tools\publish.ps1
+          -Runtime ${{ matrix.runtime }}
+          -Output artifacts\Panely-${{ steps.version.outputs.version }}-${{ matrix.runtime }}
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Panely-${{ matrix.runtime }}
+          path: artifacts/Panely-${{ steps.version.outputs.version }}-${{ matrix.runtime }}.zip
+          if-no-files-found: error
+
+  release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum *.zip > SHA256SUMS.txt && cat SHA256SUMS.txt
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "${{ github.ref_name }}" dist/*
+          --repo "${{ github.repository }}"
+          --title "Panely ${{ github.ref_name }}"
+          --generate-notes
+          --verify-tag

@@ -149,6 +149,7 @@ powershell -ExecutionPolicy Bypass -File tools\publish.ps1 -Runtime win-arm64
 | `build.cmd` | 솔루션 빌드와 테스트 (`-Configuration Release`, `-SkipTests`, `-Filter Translation`, `-Clean`) |
 | `install-local.cmd` | 빌드·테스트·게시 후 로컬 설치·실행 (`-SkipTests`, `-Samples`, `-Isolated`, `-Open <경로>`) |
 | `uninstall-local.cmd` | 로컬 설치 제거 (`-RemoveDevData`, `-RemoveData`) |
+| `release.cmd` | `main`에서 검증 후 `VersionPrefix` 올림·커밋·태그·push (`patch`, `minor`, `major` 또는 `X.Y.Z`; `-DryRun`, `-SkipVerify`, `-Yes`) |
 
 변경을 보내기 전에 `verify.cmd`를 실행하세요(약 40초, `-Quick`은 smoke 생략). 스타일 규칙은 `.editorconfig`에 있고 분석기 경고는 빌드를 실패시킵니다.
 
