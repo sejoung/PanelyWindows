@@ -15,6 +15,8 @@
 
 **English** · [한국어](README.ko.md)
 
+**[User Guide](docs/manual.md)** · [Download](https://github.com/sejoung/PanelyWindows/releases/latest)
+
 On a Mac? See [Panely for macOS](https://github.com/sejoung/Panely).
 
 <img src="docs/images/reader-en.png" alt="Panely reading a two-page spread with the library sidebar and page thumbnails" width="860">
@@ -177,9 +179,12 @@ dotnet test tests/Panely.Tests
 dotnet run --project src/Panely.App -- "D:\Comics\Series A"
 powershell -ExecutionPolicy Bypass -File tools\make-samples.ps1 -Out D:\PanelySamples   # QA sample library
 powershell -ExecutionPolicy Bypass -File tools\readme-screenshots.ps1                   # regenerate docs\images
+powershell -ExecutionPolicy Bypass -File tools\manual-screenshots.ps1                   # regenerate docs\images\manual
 ```
 
 `readme-screenshots.ps1` opens a synthetic demo comic (`tools\make-demo.ps1`) in the installed app with a separate data folder, and captures the English and Korean UI with and without translation. Install the app and download the language pack first; Panely windows open and close while it runs (about a minute).
+
+`manual-screenshots.ps1` makes the user guide's screenshots the same way, driving menus through UI Automation. It uses the Release build if there is one. Leave the mouse alone while it runs (about three minutes); it clicks one balloon, and only if that spot is a Panely window.
 
 ### Data and environment variables
 

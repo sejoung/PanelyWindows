@@ -15,6 +15,8 @@
 
 [English](README.md) · **한국어**
 
+**[사용 설명서](docs/manual.ko.md)** · [내려받기](https://github.com/sejoung/PanelyWindows/releases/latest)
+
 Mac을 쓰시나요? [macOS용 Panely](https://github.com/sejoung/Panely)를 보세요.
 
 <img src="docs/images/reader-ko.png" alt="라이브러리와 썸네일을 켜고 두 쪽 펼침으로 읽는 Panely 화면" width="860">
@@ -177,9 +179,12 @@ dotnet test tests/Panely.Tests
 dotnet run --project src/Panely.App -- "D:\Comics\Series A"
 powershell -ExecutionPolicy Bypass -File tools\make-samples.ps1 -Out D:\PanelySamples   # QA 샘플 라이브러리
 powershell -ExecutionPolicy Bypass -File tools\readme-screenshots.ps1                   # docs\images 다시 만들기
+powershell -ExecutionPolicy Bypass -File tools\manual-screenshots.ps1                   # docs\images\manual 다시 만들기
 ```
 
 `readme-screenshots.ps1`은 합성 데모 만화(`tools\make-demo.ps1`)를 설치된 앱으로 열어, 실제 데이터와 분리된 데이터 폴더에서 영어·한국어 UI의 원본·번역 화면을 찍습니다. 먼저 앱을 설치하고 언어팩을 받아 두세요. 실행하는 동안(약 1분) Panely 창이 여러 번 열리고 닫힙니다.
+
+`manual-screenshots.ps1`은 같은 방식으로 사용 설명서 화면을 찍으며, 메뉴는 UI Automation으로 실행합니다. Release 빌드가 있으면 그것을 씁니다. 실행하는 동안(약 3분) 마우스를 건드리지 마세요. 말풍선 하나를 클릭하는데, 그 위치가 Panely 창일 때만 누릅니다.
 
 ### 데이터와 환경 변수
 

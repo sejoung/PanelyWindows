@@ -15,9 +15,9 @@
     "en": "Fast uses a smaller, quantized model; Accurate uses the full-precision model with a wider search and takes longer. Each mode downloads its own language pack.",
     "ko": "빠름은 더 작은 양자화 모델을, 정확은 전체 정밀도 모델과 더 넓은 탐색을 사용해 더 오래 걸립니다. 모드마다 언어팩을 따로 내려받습니다."
   },
-  "Not tested yet: speed, memory use and quality are unknown, and the language pack is about 2.5 GB.": {
-    "en": "Not tested yet: speed, memory use and quality are unknown, and the language pack is about 2.5 GB.",
-    "ko": "아직 검증하지 않았습니다. 속도·메모리 사용량·품질을 알 수 없으며 언어팩은 약 2.5GB입니다."
+  "Not tested yet: speed, memory use and quality are unknown, and the language pack is 2.3 GB.": {
+    "en": "Not tested yet: speed, memory use and quality are unknown, and the language pack is 2.3 GB.",
+    "ko": "아직 검증하지 않았습니다. 속도·메모리 사용량·품질을 알 수 없으며 언어팩은 2.3GB입니다."
   },
   "From page": { "en": "From page", "ko": "시작 페이지" },
   "To page": { "en": "To page", "ko": "끝 페이지" },
