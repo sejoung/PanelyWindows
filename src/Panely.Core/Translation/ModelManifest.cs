@@ -137,7 +137,7 @@ public static class ModelCatalog
           ],
           "license": "MIT (facebook/m2m100_418M weights). The Xenova ONNX conversion repo states no separate license; Panely does not redistribute the files, the user downloads them from the pinned source.",
           "source": "https://huggingface.co/Xenova/m2m100_418M/resolve/9c374f0b7aca709787cea97b047bfbbd1559d177",
-          "validation": "sha256 pinned from the Hub LFS objects only. This fp32 variant has not been downloaded or run; speed, memory and quality are unverified.",
+          "validation": "sha256 pinned from the Hub LFS objects; downloaded in the app and checksum-verified on 2026-10-20. Translated a 298-page Japanese webtoon (146 balloons) ja→ko on CPU: end to end about 7 s slower than Fast and about 2.2 GB more peak memory. In the developer's side-by-side review its translations were clearly better than Fast (one reviewer, not a golden set).",
           "languages": ["ja", "zh-Hans", "zh-Hant", "ko", "en"],
           "mode": "translator-accurate",
           "input": {"encoder": "encoder_model.onnx", "decoder": "decoder_model_merged.onnx", "tokenizer": "sentencepiece.bpe.model", "vocab": "vocab.json"},

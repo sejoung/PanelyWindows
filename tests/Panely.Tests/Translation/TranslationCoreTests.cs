@@ -192,6 +192,63 @@ public class ModelManifestTests
         Assert.Equal("source not pinned", m.VerificationProblem());
     }
 
+    private static ModelManifest PackManifest(string id, byte[] payload) => new()
+    {
+        Id = id,
+        Revision = "abc123",
+        License = "MIT",
+        Source = "https://example.invalid/pinned/abc123",
+        Mode = "detector",
+        Files = [new ModelFile { Name = "model.onnx", Bytes = payload.Length, Sha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(payload)) }],
+    };
+
+    [Fact]
+    public async Task DownloadRaisesChangedAsProgressMoves()
+    {
+        using var dir = new TempDir();
+        var payload = new byte[1 << 20];
+        new Random(7).NextBytes(payload);
+        var store = new ModelStore(dir.Path, () => new HttpClient(new StubHandler(payload)), [PackManifest("test-model", payload)]);
+        var seen = new List<double?>();
+        store.Changed += (_, _) => { lock (seen) seen.Add(store.DownloadProgress("test-model")); };
+
+        await store.InstallAsync("test-model", null, CancellationToken.None);
+
+        // 시작·끝 말고도 받는 도중에 알려야 화면의 퍼센트가 움직인다
+        Assert.Contains(seen, p => p is > 0 and < 1);
+        Assert.True(seen.Count <= 102, $"알림이 너무 잦습니다({seen.Count}).");
+        Assert.True(store.IsInstalled("test-model"));
+    }
+
+    [Fact]
+    public async Task PackCapabilityShowsDownloadWhileTranslatorPackDownloadsBeforeTextRecognition()
+    {
+        using var dir = new TempDir();
+        var payload = "translator"u8.ToArray();
+        var release = new TaskCompletionSource();
+        var store = new ModelStore(dir.Path, () => new HttpClient(new GatedHandler(payload, release.Task)), [PackManifest(ModelCatalog.TranslatorFastId, payload)]);
+        // 글자 인식 팩이 아직 없는 상태
+        var recognizer = new FakeRecognizer();
+        recognizer.Languages.Clear();
+        var packs = new LanguagePackManager(store, recognizer, new PseudoTranslator { Delay = TimeSpan.Zero });
+
+        var install = store.InstallAsync(ModelCatalog.TranslatorFastId, null, CancellationToken.None);
+        Assert.Equal(CapabilityStatus.Downloading, packs.GetCapability("en", "ko", TranslationMode.Fast).Status);
+
+        release.SetResult();
+        await install;
+        Assert.NotEqual(CapabilityStatus.Downloading, packs.GetCapability("en", "ko", TranslationMode.Fast).Status);
+    }
+
+    private sealed class GatedHandler(byte[] payload, Task gate) : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            await gate.ConfigureAwait(false);
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new ByteArrayContent(payload) };
+        }
+    }
+
     private sealed class StubHandler(byte[] payload) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

@@ -371,7 +371,7 @@ Open **File › Settings…** (`Ctrl+,`). On the **Experimental** tab, turn on t
 The other settings on this tab:
 
 - **Translate Into by Default**: the language new series are translated into. You can change it for each series.
-- **Translation Mode**: **Fast** or **Accurate**. **Accurate** hasn't been tested yet, so use **Fast** (see below).
+- **Translation Mode**: **Fast** or **Accurate**. **Accurate** uses about 2 GB more memory and runs a little slower, but its translations read much better in a side-by-side review. If your PC has the memory to spare, try **Accurate** (see below).
 - **Match Speech Level**: not available in this Windows build, so it's greyed out.
 
 ### Step 2: Download the language packs
@@ -666,7 +666,6 @@ Hover over a menu item or toolbar button to see its shortcut. Number keys are th
 | "Open with Panely" stopped working after moving the app folder | Click **Add to File Explorer** again in **Settings › General**. |
 | No translation button | Turn on **Settings › Experimental › Translation Assist**. |
 | "Couldn't tell which language this book is in." | Choose the language yourself under **Book's language** at the top of the translation panel. |
-| Language pack download progress seems stuck | Progress updates per pack, so it may not move while a large pack (608.6 MB or 2.3 GB) downloads. Please wait. |
 | Translation fails or the app is unstable because of the GPU | Make Panely use the CPU only by setting this environment variable, then start Panely again: `setx PANELY_ORT_DEVICE cpu` |
 
 When you report a problem, please attach a ZIP from **File › Export Diagnostic Report…**. [Open a new issue](https://github.com/sejoung/PanelyWindows/issues/new)
@@ -678,13 +677,13 @@ These come from this release and the [implementation status](IMPLEMENTATION-STAT
 **Translation**
 
 - Quality is limited by the small M2M100 model. Short lines and idioms are often wrong, and quality hasn't been checked against a reference (golden) set. manga-ocr also misreads text sometimes.
-- **Accurate** mode (fp32, 2.3 GB language pack) has pinned checksums but has never actually been downloaded and run. Its speed, memory use and quality are unknown, so use **Fast**.
+- **Accurate** mode (fp32, 2.3 GB language pack) was measured once on a 298-page webtoon with 146 balloons: about 7 seconds slower than **Fast** for the whole book, and about 2 GB more memory at peak (5.8 GB vs 3.5 GB). It translated 115 of the 146 balloons differently from **Fast**, and in the developer's side-by-side review its translations were much better. That's one person's judgment, not a check against a reference set. If memory is tight, use **Fast**.
 - **Match Speech Level** isn't in the Windows build yet.
 - Chinese Simplified and Traditional aren't told apart (M2M100 has a single Chinese). Vertical Chinese text hasn't been measured.
 - In narration boxes that the text nearly fills, the translation patch may be drawn semi-transparent, so the original faintly shows through.
 - Translation jobs in progress are lost when you quit. Finished pages are kept.
 - Language pack downloads can't be cancelled, and the app can't delete a language pack.
-- A full in-app download of the 600 MB+ packs hasn't been run end to end. It was checked by downloading the same files directly into the install folder.
+- In-app download has been run end to end for the **Accurate** pack (2.3 GB). The other packs were checked by downloading the same files directly into the install folder.
 - Not every action in Edit Balloons (such as drag-to-add) and in the AI chat window has been checked by hand.
 - Until you click **Save as Text File…**, the AI chat prompt shows a balloon count of 0. Save the file first, then copy the prompt.
 - Series auto-translate and Translate Entire Series skip volumes that are archives inside an archive. For such a book, translation pauses when you open another book.

@@ -87,6 +87,7 @@ public sealed class ModelStore
             using var http = _httpFactory();
             long done = 0;
             var total = m.TotalBytes;
+            var reportedPercent = 0;
             foreach (var f in m.Files)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -110,6 +111,13 @@ public sealed class ModelStore
                         if (fileBytes > f.Bytes) throw new InvalidDataException(Loc.T("%@ is larger than its manifest says.", f.Name));
                         progress?.Report(new InstallProgress(done, total, f.Name));
                         lock (_gate) _downloading[id] = total > 0 ? done / (double)total : 0;
+                        // 설정·번역 패널이 진행률을 따라 다시 그리도록 1%가 바뀔 때마다 알린다(팩 하나에 최대 100번)
+                        var percent = total > 0 ? (int)(done * 100 / total) : 0;
+                        if (percent != reportedPercent)
+                        {
+                            reportedPercent = percent;
+                            Changed?.Invoke(this, EventArgs.Empty);
+                        }
                     }
                     await output.FlushAsync(cancellationToken).ConfigureAwait(false);
                     var hash = Convert.ToHexString(sha.GetHashAndReset());
@@ -173,25 +181,22 @@ public sealed class LanguagePackManager : ILanguagePackProvider
     {
         if (source == target || !TranslationLanguages.IsSupported(source) || !TranslationLanguages.IsSupported(target))
             return Capability.Unavailable(Loc.T("This language pair isn't supported"));
+        // 필요한 팩 중 받는 중인 것이 있으면 먼저 알린다. 번역·탐지 팩은 글자 인식 팩보다 먼저 받으므로
+        // 글자 인식 상태부터 보면 그동안 패널이 다운로드 중으로 보이지 않는다.
+        foreach (var id in RequiredPacks(source, mode))
+            if (_store.DownloadProgress(id) is { } p) return new Capability(CapabilityStatus.Downloading, null, p);
         var ocr = _recognizer.GetCapability(source);
         // 글자 인식 팩이 없으면(다운로드 필요·불가) 번역 모델이 있어도 바로 실행할 수 없다
         if (!ocr.IsReady) return ocr;
-        var pack = TranslatorPackFor(mode);
-        if (_store.DownloadProgress(pack) is { } p) return new Capability(CapabilityStatus.Downloading, null, p);
         return _translator.GetCapability(source, target, mode);
     }
 
     public IReadOnlyList<string> MissingPacks(string source, string target, TranslationMode mode)
-    {
-        var missing = new List<string>();
-        var pack = TranslatorPackFor(mode);
-        if (_store.Find(pack) is { } m && m.IsVerified && !_store.IsInstalled(m)) missing.Add(pack);
-        if (_store.Find(ModelCatalog.DetectorId) is { } d && d.IsVerified && !_store.IsInstalled(d)) missing.Add(ModelCatalog.DetectorId);
-        // 만화 OCR 팩(일본어 manga-ocr + PP-OCR, 그 외 PP-OCR). PP-OCR은 언어 감지에도 쓴다.
-        foreach (var id in ModelTextRecognizer.PacksFor(source))
-            if (_store.Find(id) is { } o && o.IsVerified && !_store.IsInstalled(o) && !missing.Contains(id)) missing.Add(id);
-        return missing;
-    }
+        => RequiredPacks(source, mode).Where(id => _store.Find(id) is { IsVerified: true } m && !_store.IsInstalled(m)).ToList();
+
+    /// <summary>번역 모델, 말풍선 탐지, 만화 OCR 팩(일본어 manga-ocr + PP-OCR, 그 외 PP-OCR) 순. PP-OCR은 언어 감지에도 쓴다.</summary>
+    private static IEnumerable<string> RequiredPacks(string source, TranslationMode mode)
+        => new[] { TranslatorPackFor(mode), ModelCatalog.DetectorId }.Concat(ModelTextRecognizer.PacksFor(source)).Distinct();
 
     public Task InstallAsync(string packId, IProgress<InstallProgress>? progress, CancellationToken cancellationToken)
         => _store.InstallAsync(packId, progress, cancellationToken);
