@@ -145,14 +145,29 @@ public sealed class AboutWindow : PanelyDialog
         panel.Children.Add(new TextBlock { Text = $"{Loc.T("App version")} {AppInfo.Version} · {Loc.T("Build")} {AppInfo.Build}", Style = (Style)FindResource("Text.Caption"), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 4, 0, 12) });
         panel.Children.Add(new TextBlock
         {
-            Text = Loc.T("A local comic and image reader for Windows. Original design and assets: Copyright 2026 beni kim, licensed under the Apache License 2.0. Third-party components: SharpCompress (MIT), ONNX Runtime (MIT), Microsoft.ML.Tokenizers (MIT), Magick.NET (Apache-2.0)."),
+            Text = Loc.T("A local comic and image reader for Windows."),
             Style = (Style)FindResource("Text.Body"),
             Foreground = (Brush)FindResource("Brush.TextSecondary"),
             TextAlignment = TextAlignment.Center,
         });
+
+        // 출처·라이선스는 제목 + 한 줄씩(라이브러리 이름과 라이선스명은 번역하지 않는다)
+        void AddSection(string heading, params string[] lines)
+        {
+            panel.Children.Add(new TextBlock { Text = heading, Style = (Style)FindResource("Text.Section"), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 16, 0, 4) });
+            foreach (var line in lines)
+                panel.Children.Add(new TextBlock { Text = line, Style = (Style)FindResource("Text.Caption"), TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 1, 0, 1) });
+        }
+        AddSection(Loc.T("Original design and assets"), "Copyright 2026 beni kim", "Apache License 2.0");
+        AddSection(Loc.T("Third-party components"),
+            "SharpCompress · MIT",
+            "ONNX Runtime · MIT",
+            "Microsoft.ML.Tokenizers · MIT",
+            "Magick.NET · Apache-2.0");
+
         var ok = MakeButton(Loc.T("OK"), true);
         ok.HorizontalAlignment = HorizontalAlignment.Center;
-        ok.Margin = new Thickness(0, 16, 0, 0);
+        ok.Margin = new Thickness(0, 20, 0, 0);
         ok.IsDefault = true;
         ok.Click += (_, _) => DialogResult = true;
         panel.Children.Add(ok);

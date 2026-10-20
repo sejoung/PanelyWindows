@@ -1,9 +1,8 @@
 {
   // 리더·셸·설정 Windows 문구. 원본의 macOS 단축키 접미사(⌘ 등)는 빼고 CommandRegistry가 Windows 단축키를 붙인다.
-  "A local comic and image reader for Windows. Original design and assets: Copyright 2026 beni kim, licensed under the Apache License 2.0. Third-party components: SharpCompress (MIT), ONNX Runtime (MIT), Microsoft.ML.Tokenizers (MIT), Magick.NET (Apache-2.0).": {
-    "en": "A local comic and image reader for Windows. Original design and assets: Copyright 2026 beni kim, licensed under the Apache License 2.0. Third-party components: SharpCompress (MIT), ONNX Runtime (MIT), Microsoft.ML.Tokenizers (MIT), Magick.NET (Apache-2.0).",
-    "ko": "Windows용 로컬 만화·이미지 리더입니다. 원본 디자인과 자산: Copyright 2026 beni kim, Apache License 2.0. 서드파티 구성요소: SharpCompress(MIT), ONNX Runtime(MIT), Microsoft.ML.Tokenizers(MIT), Magick.NET(Apache-2.0)."
-  },
+  "A local comic and image reader for Windows.": { "en": "A local comic and image reader for Windows.", "ko": "Windows용 로컬 만화·이미지 리더입니다." },
+  "Original design and assets": { "en": "Original design and assets", "ko": "원본 디자인과 자산" },
+  "Third-party components": { "en": "Third-party components", "ko": "서드파티 구성요소" },
   "Add to File Explorer": { "en": "Add to File Explorer", "ko": "파일 탐색기에 추가" },
   "Remove from File Explorer": { "en": "Remove from File Explorer", "ko": "파일 탐색기에서 제거" },
   "Add “Open with Panely” for CBZ, CBR, ZIP and RAR files and folders. Default apps for ZIP and RAR aren't changed.": {
