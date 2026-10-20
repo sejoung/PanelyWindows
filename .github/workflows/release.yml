@@ -1,5 +1,5 @@
-# v*.*.* 태그가 push되면 검증 → win-x64/win-arm64 게시 → GitHub 릴리스 생성.
-# 태그는 tools\release.ps1(release.cmd)이 Directory.Build.props의 VersionPrefix와 맞춰 만든다.
+# v*.*.* 태그가 push되면 검증 → win-x64/win-arm64 게시 → GitHub 릴리스 생성(본문은 docs/releases/<tag>.md).
+# 태그는 tools\release.ps1(release.cmd)이 Directory.Build.props의 VersionPrefix·app.manifest 버전과 맞춰 만든다.
 name: Release
 
 on:
@@ -41,13 +41,15 @@ jobs:
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Build.props', 'global.json') }}
           restore-keys: nuget-${{ runner.os }}-
 
-      - name: Check tag matches VersionPrefix
+      - name: Check tag matches VersionPrefix and app.manifest
         id: version
         shell: powershell
         run: |
           $version = ([xml](Get-Content Directory.Build.props -Raw)).Project.PropertyGroup.VersionPrefix | Where-Object { $_ } | Select-Object -First 1
           $tag = '${{ github.ref_name }}'
           if ("v$version" -ne $tag) { throw "태그 $tag 와 Directory.Build.props VersionPrefix $version 가 다릅니다." }
+          $manifestVersion = ([xml](Get-Content src\Panely.App\app.manifest -Raw)).assembly.assemblyIdentity.version
+          if ($manifestVersion -ne "$version.0") { throw "app.manifest assemblyIdentity version $manifestVersion 가 $version.0 과 다릅니다." }
           "version=$version" >> $env:GITHUB_OUTPUT
 
       - name: Publish
@@ -69,6 +71,12 @@ jobs:
     permissions:
       contents: write
     steps:
+      # 릴리스 본문(docs/releases/<tag>.md)만 받는다
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: docs/releases
+          path: src
+
       - uses: actions/download-artifact@v8
         with:
           path: dist
@@ -78,12 +86,16 @@ jobs:
         working-directory: dist
         run: sha256sum *.zip > SHA256SUMS.txt && cat SHA256SUMS.txt
 
+      # 직접 쓴 노트 뒤에 GitHub이 만든 변경 목록(--generate-notes)이 붙는다. 노트 파일이 없으면 변경 목록만 쓴다.
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >
-          gh release create "${{ github.ref_name }}" dist/*
-          --repo "${{ github.repository }}"
-          --title "Panely ${{ github.ref_name }}"
-          --generate-notes
-          --verify-tag
+        run: |
+          notes=()
+          if [ -f "src/docs/releases/${{ github.ref_name }}.md" ]; then notes=(--notes-file "src/docs/releases/${{ github.ref_name }}.md"); fi
+          gh release create "${{ github.ref_name }}" dist/* \
+            --repo "${{ github.repository }}" \
+            --title "Panely ${{ github.ref_name }}" \
+            "${notes[@]}" \
+            --generate-notes \
+            --verify-tag

@@ -61,7 +61,7 @@ Panely can find speech balloons, read the text and draw a translation over the p
 | Japanese text | [manga-ocr](https://huggingface.co/ogkalu/manga-ocr-onnx) (int8) | ~117 MB | CPU |
 | Chinese / English / Korean text, language detection, line finding | [PP-OCRv5 mobile](https://huggingface.co/ogkalu/ppocr-v5-onnx) | ~43 MB | Line finding on GPU, reading on CPU |
 | Translation — Fast | [M2M100-418M](https://huggingface.co/Xenova/m2m100_418M) (int8) | ~640 MB | CPU |
-| Translation — Accurate | M2M100-418M (fp32) | ~2.5 GB | CPU |
+| Translation — Accurate (untested) | M2M100-418M (fp32) | ~2.5 GB | CPU |
 
 The device split comes from measurements: balloon detection and text-line finding are faster on the GPU, while the text-reading and translation models are faster on the CPU. Reading and translation run at the same time, and balloons from several pages go to the translator together. Set `PANELY_ORT_DEVICE=cpu` to turn off the GPU entirely.
 
@@ -73,12 +73,28 @@ The device split comes from measurements: balloon detection and text-line findin
 ### Requirements
 
 - Windows 10 version 2004 (build 19041) or later; Windows 11 x64 is the primary target
-- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) to build from source
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) to build from source (the release ZIPs don't need .NET)
 - For translation: about 1 GB of disk space for the Fast language pack; any DirectX 12 GPU speeds up detection
 
-### Build, install and run
+### Download
 
-There are no prebuilt releases yet. Clone the repository and run the installer script from the repository root:
+Get the portable ZIP for your PC from [Releases](https://github.com/sejoung/PanelyWindows/releases/latest):
+
+| File | For |
+|---|---|
+| `Panely-<version>-win-x64.zip` | Most Windows PCs (Intel and AMD) |
+| `Panely-<version>-win-arm64.zip` | Windows on ARM (e.g. Snapdragon). Builds and packages are checked, but it hasn't been run on an ARM device yet |
+
+Extract the ZIP to a folder you keep, such as `%LOCALAPPDATA%\Programs\Panely`, and run `Panely.exe`. No installer or administrator rights are needed. `SHA256SUMS.txt` on the release page lists the checksums.
+
+> [!NOTE]
+> The app isn't code-signed yet, so Windows SmartScreen may show "Windows protected your PC" on first launch. Choose **More info › Run anyway**.
+
+To update, close Panely and replace the folder's contents with the new ZIP. To uninstall, first click **Remove from File Explorer** in **Settings › General** if you added "Open with Panely", then delete the folder. Your library, reading progress and language packs stay in `%LOCALAPPDATA%\Panely` until you delete that folder too.
+
+### Build, install and run from source
+
+Clone the repository and run the installer script from the repository root:
 
 ```powershell
 git clone https://github.com/sejoung/PanelyWindows.git
@@ -149,7 +165,7 @@ The `.cmd` files in the repository root pass their arguments to the matching `to
 | `build.cmd` | Build the solution and run the tests (`-Configuration Release`, `-SkipTests`, `-Filter Translation`, `-Clean`) |
 | `install-local.cmd` | Build, test, publish and install locally, then launch (`-SkipTests`, `-Samples`, `-Isolated`, `-Open <path>`) |
 | `uninstall-local.cmd` | Remove the local install (`-RemoveDevData`, `-RemoveData`) |
-| `release.cmd` | Verify, bump `VersionPrefix`, commit, tag and push from `main` (`patch`, `minor`, `major` or `X.Y.Z`; `-DryRun`, `-SkipVerify`, `-Yes`) |
+| `release.cmd` | Verify, bump `VersionPrefix` and the `app.manifest` version, commit, tag and push from `main` (`patch`, `minor`, `major` or `X.Y.Z`; `-DryRun`, `-SkipVerify`, `-Yes`). Write and commit `docs/releases/vX.Y.Z.md` first; it becomes the release notes |
 
 Run `verify.cmd` before sending a change (about 40 seconds; `-Quick` skips the smoke tests). Style rules live in `.editorconfig`, and analyzer warnings fail the build.
 

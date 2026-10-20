@@ -81,6 +81,9 @@ internal sealed class ExperimentalSettingsView : UserControl
             var label = mode == TranslationMode.Fast ? Loc.T("Fast") : Loc.T("Accurate");
             _root.Children.Add(Gap(Ui.Radio(label, "tr-mode", settings.TranslationMode == mode, () => state.UpdateSettings(s => s.TranslationMode = mode)), 4));
             _root.Children.Add(Ui.Caption("   " + ModeCapability(mode)));
+            // Accurate(fp32)는 manifest 해시만 고정했고 내려받아 실행해 본 적이 없다(ModelManifest validation)
+            if (mode == TranslationMode.Accurate)
+                _root.Children.Add(Ui.Caption("   " + Loc.T("Not tested yet: speed, memory use and quality are unknown, and the language pack is about 2.5 GB.")));
         }
         _root.Children.Add(Gap(Ui.Caption(Loc.T("Fast uses a smaller, quantized model; Accurate uses the full-precision model with a wider search and takes longer. Each mode downloads its own language pack.")), 4));
 

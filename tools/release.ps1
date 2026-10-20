@@ -4,9 +4,11 @@
   win-x64/win-arm64 ZIP을 GitHub 릴리스로 올린다.
 
 .DESCRIPTION
-  1. 확인     main 브랜치, 작업 트리 깨끗함, origin/main보다 뒤처지지 않음, 태그 중복 없음
+  1. 확인     main 브랜치, 작업 트리 깨끗함, origin/main보다 뒤처지지 않음, 태그 중복 없음,
+              릴리스 노트 docs\releases\vX.Y.Z.md가 커밋되어 있음(release.yml이 릴리스 본문으로 씀)
   2. 검증     tools\verify.ps1 전체(smoke·게시본 smoke 포함)
-  3. 버전     Directory.Build.props의 VersionPrefix 변경 후 커밋 "release: vX.Y.Z"
+  3. 버전     Directory.Build.props의 VersionPrefix와 src\Panely.App\app.manifest의 assemblyIdentity version(X.Y.Z.0)을
+              바꾼 뒤 커밋 "release: vX.Y.Z"
   4. 태그     annotated 태그 vX.Y.Z
   5. push     main과 태그를 한 번에(--atomic)
 
@@ -26,6 +28,7 @@ param(
 
 . "$PSScriptRoot\_common.ps1"
 $propsFile = Join-Path $RepoRoot 'Directory.Build.props'
+$manifestFile = Join-Path $RepoRoot 'src\Panely.App\app.manifest'
 
 function Invoke-Git([string[]]$arguments) {
     $out = & git -C $RepoRoot @arguments
@@ -58,6 +61,14 @@ if ($next -lt $current) { throw "새 버전 $next 가 현재 버전 $current 보
 $tag = "v$next"
 if (& git -C $RepoRoot tag --list $tag) { throw "태그 $tag 가 이미 있습니다." }
 if (Invoke-Git @('ls-remote', '--tags', 'origin', "refs/tags/$tag")) { throw "원격에 태그 $tag 가 이미 있습니다." }
+# 작업 트리가 깨끗한지 위에서 확인했으므로, 파일이 있으면 커밋된 상태다
+$notesFile = "docs\releases\$tag.md"
+if (-not (Test-Path (Join-Path $RepoRoot $notesFile))) { throw "릴리스 노트 $notesFile 가 없습니다. 이전 버전 노트를 참고해 작성·커밋한 뒤 다시 실행하세요." }
+
+$manifest = [IO.File]::ReadAllText($manifestFile)
+$manifestMatch = [regex]::Match($manifest, '(<assemblyIdentity\s+version=")(\d+\.\d+\.\d+\.\d+)(")')
+if (-not $manifestMatch.Success) { throw 'app.manifest에서 <assemblyIdentity version="X.Y.Z.W"를 찾지 못했습니다.' }
+$manifestVersion = "$next.0"
 
 Write-Ok "현재 $current → 릴리스 $tag"
 if (-not $DryRun -and -not $Yes) {
@@ -80,15 +91,27 @@ if ($DryRun) {
 }
 
 # ── 3. 버전 ─────────────────────────────────────────────
+$utf8 = New-Object Text.UTF8Encoding($false)
+$changed = @()
 if ($next -ne $current) {
     Write-Step "VersionPrefix $current → $next"
     $updated = $props.Substring(0, $match.Index) + "<VersionPrefix>$next</VersionPrefix>" + $props.Substring($match.Index + $match.Length)
-    [IO.File]::WriteAllText($propsFile, $updated, (New-Object Text.UTF8Encoding($false)))
-    Invoke-Git @('add', 'Directory.Build.props') | Out-Null
+    [IO.File]::WriteAllText($propsFile, $updated, $utf8)
+    $changed += 'Directory.Build.props'
+}
+if ($manifestMatch.Groups[2].Value -ne $manifestVersion) {
+    Write-Step "app.manifest assemblyIdentity $($manifestMatch.Groups[2].Value) → $manifestVersion"
+    $group = $manifestMatch.Groups[2]
+    $updated = $manifest.Substring(0, $group.Index) + $manifestVersion + $manifest.Substring($group.Index + $group.Length)
+    [IO.File]::WriteAllText($manifestFile, $updated, $utf8)
+    $changed += 'src/Panely.App/app.manifest'
+}
+if ($changed.Count -gt 0) {
+    Invoke-Git (@('add') + $changed) | Out-Null
     Invoke-Git @('commit', '--quiet', '-m', "release: $tag") | Out-Null
-    Write-Ok "커밋 release: $tag"
+    Write-Ok "커밋 release: $tag ($($changed -join ', '))"
 } else {
-    Write-Step "VersionPrefix가 이미 $next 입니다(버전 커밋 없음)"
+    Write-Step "버전이 이미 $next 입니다(버전 커밋 없음)"
 }
 
 # ── 4. 태그 / 5. push ────────────────────────────────────
@@ -98,7 +121,7 @@ Invoke-Git @('tag', '-a', $tag, '-m', "Panely $tag") | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "    push 실패. 로컬 상태를 되돌리려면:" -ForegroundColor Red
     Write-Host "      git tag -d $tag" -ForegroundColor Yellow
-    if ($next -ne $current) { Write-Host '      git reset --hard HEAD~1' -ForegroundColor Yellow }
+    if ($changed.Count -gt 0) { Write-Host '      git reset --hard HEAD~1' -ForegroundColor Yellow }
     exit 1
 }
 

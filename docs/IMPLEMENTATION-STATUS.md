@@ -2,7 +2,7 @@
 
 기준일 2026-10-16. 빌드 Windows 11 Pro 10.0.26200 x64, .NET SDK 10.0.402, 디스플레이 200%. 기능 ID와 "01~09 문서"는 첫 포팅 명세(`docs/windows/`)를 가리키며, 이 명세는 2026-10-19에 저장소에서 지웠다([ADR 0002](adr/0002-retire-porting-spec.md)). 원문은 커밋 `45c0cb1`에서 볼 수 있다.
 
-**상태 요약**: 01 문서의 모든 기능 ID를 코드로 구현했습니다. 자동 테스트 411개가 통과합니다(단위·계약 408개 + 실제 앱 smoke 3개). `verify.cmd`가 린트·경고 없는 빌드·테스트·게시본 smoke를 한 번에 확인합니다. 커버리지는 Core+Domain 82.9%이고, UI 계층은 smoke로 확인합니다. 리더·라이브러리·번역·내보내기는 실제 앱을 띄워 확인했습니다(UI Automation과 화면 캡처). 아래 "미검증/제약"에 적은 항목은 실제 환경에서 확인하지 못했거나 명세와 다르게 동작하는 부분입니다. 09 문서의 "전체 포팅 완료" 조건 중 깨끗한 PC 검수, 번역 품질 골든 세트, installer는 아직 충족하지 않았습니다.
+**상태 요약**: 01 문서의 모든 기능 ID를 코드로 구현했습니다. 자동 테스트 461개가 통과합니다(단위·계약 458개 + 실제 앱 smoke 3개, 2026-10-20 기준). `verify.cmd`가 린트·경고 없는 빌드·테스트·게시본(ReadyToRun) smoke를 한 번에 확인합니다. 커버리지는 Core+Domain 78.9%이고, UI 계층은 smoke로 확인합니다. 리더·라이브러리·번역·내보내기는 실제 앱을 띄워 확인했습니다(UI Automation과 화면 캡처). 아래 "미검증/제약"에 적은 항목은 실제 환경에서 확인하지 못했거나 명세와 다르게 동작하는 부분입니다. 09 문서의 "전체 포팅 완료" 조건 중 깨끗한 PC 검수, 번역 품질 골든 세트, installer는 아직 충족하지 않았습니다.
 
 검수 방법 표기: **T** = 자동 테스트, **R** = 앱 실행 후 화면/UIA로 확인, **—** = 코드만 있고 실행 확인 없음.
 
@@ -68,5 +68,5 @@
 
 - 텍스트가 상자를 거의 꽉 채운 내레이션 상자는 표본 고리가 상자 테두리를 지나 "그림 위 글자"로 판정됩니다. 그러면 명세대로 α.92 패치를 그리므로 원문이 희미하게 비칩니다.
 - 실행 중인 번역 작업은 앱을 종료하면 사라집니다(명세상 durable queue는 선택). 번역·내보내기 중에 종료하면 먼저 확인합니다([ADR 0007](adr/0007-reader-ui-gaps.md)).
-- 깨끗한 Windows PC, 125/150% 및 혼합 DPI, ARM64, 고대비 모드는 확인하지 않았습니다.
-- 배포는 self-contained portable zip(`tools/publish.ps1`)까지입니다. 서명된 installer/MSIX는 없습니다.
+- 깨끗한 Windows PC, 125/150% 및 혼합 DPI, ARM64, 고대비 모드는 확인하지 않았습니다. ARM64는 게시본의 네이티브 DLL(ONNX Runtime, DirectML, Magick.Native, coreclr)이 ARM64인 것만 확인했습니다(2026-10-20).
+- 배포는 태그 push 시 GitHub 릴리스로 올라가는 self-contained portable zip(win-x64/win-arm64, `tools/release.ps1` → `.github/workflows/release.yml`)입니다. 서명된 installer/MSIX는 없습니다. 릴리스 노트는 `docs/releases/vX.Y.Z.md`에 씁니다.

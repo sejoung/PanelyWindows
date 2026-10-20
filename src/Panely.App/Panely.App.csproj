@@ -53,4 +53,11 @@
     <None Include="$(PkgMicrosoft_AI_DirectML)\bin\x64-win\DirectML.dll" Condition="'$(RuntimeIdentifier)' != 'win-arm64'" Link="DirectML.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Visible="false" />
   </ItemGroup>
 
+  <!-- ONNX Runtime 패키지의 네이티브 폴더에 든 링크용 import library(onnxruntime.lib)는 실행에 필요 없으므로 게시본에서 뺀다. -->
+  <Target Name="ExcludeImportLibrariesFromPublish" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Extension)' == '.lib'" />
+    </ItemGroup>
+  </Target>
+
 </Project>

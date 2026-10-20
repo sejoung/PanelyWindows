@@ -61,7 +61,7 @@
 | 일본어 글자 인식 | [manga-ocr](https://huggingface.co/ogkalu/manga-ocr-onnx) (int8) | 약 117MB | CPU |
 | 중국어·영어·한국어 글자 인식, 언어 감지, 글자 줄 찾기 | [PP-OCRv5 mobile](https://huggingface.co/ogkalu/ppocr-v5-onnx) | 약 43MB | 줄 찾기는 GPU, 읽기는 CPU |
 | 번역 — 빠름 | [M2M100-418M](https://huggingface.co/Xenova/m2m100_418M) (int8) | 약 640MB | CPU |
-| 번역 — 정확 | M2M100-418M (fp32) | 약 2.5GB | CPU |
+| 번역 — 정확(미검증) | M2M100-418M (fp32) | 약 2.5GB | CPU |
 
 장치 배분은 실측 결과입니다. 말풍선 탐지와 글자 줄 찾기는 GPU가 빠르고, 글자 읽기와 번역 모델은 CPU가 더 빠릅니다. 글자 읽기와 번역은 함께 돌고, 번역기에는 여러 쪽의 말풍선이 한꺼번에 들어갑니다. `PANELY_ORT_DEVICE=cpu`로 GPU를 완전히 끌 수 있습니다.
 
@@ -73,12 +73,28 @@
 ### 요구 사항
 
 - Windows 10 버전 2004(빌드 19041) 이상. 1차 대상은 Windows 11 x64입니다
-- 소스에서 빌드하려면 [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+- 소스에서 빌드하려면 [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)(배포 ZIP은 .NET 없이 실행됩니다)
 - 번역: 빠름 언어팩에 디스크 약 1GB. DirectX 12 GPU가 있으면 말풍선 탐지가 빨라집니다
 
-### 빌드·설치·실행
+### 내려받기
 
-아직 배포 버전은 없습니다. 저장소를 받은 뒤 루트에서 설치 스크립트를 실행합니다.
+[Releases](https://github.com/sejoung/PanelyWindows/releases/latest)에서 PC에 맞는 포터블 ZIP을 받습니다.
+
+| 파일 | 대상 |
+|---|---|
+| `Panely-<버전>-win-x64.zip` | 대부분의 Windows PC(Intel·AMD) |
+| `Panely-<버전>-win-arm64.zip` | ARM 기반 Windows(Snapdragon 등). 빌드와 구성 파일은 확인했지만 실제 ARM 기기에서는 아직 실행해 보지 않았습니다 |
+
+ZIP을 계속 둘 폴더(예: `%LOCALAPPDATA%\Programs\Panely`)에 풀고 `Panely.exe`를 실행합니다. 설치 프로그램이나 관리자 권한은 필요 없습니다. 체크섬은 릴리스 페이지의 `SHA256SUMS.txt`에 있습니다.
+
+> [!NOTE]
+> 아직 코드 서명이 없어 처음 실행할 때 Windows SmartScreen이 "Windows의 PC 보호" 창을 띄울 수 있습니다. **추가 정보 › 실행**을 누르세요.
+
+업데이트할 때는 Panely를 닫고 폴더 내용을 새 ZIP으로 바꿉니다. 지울 때는 "Panely로 열기"를 추가했다면 먼저 **설정 › 일반**에서 **파일 탐색기에서 제거**를 누른 뒤 폴더를 지웁니다. 라이브러리, 읽기 진행, 언어팩은 `%LOCALAPPDATA%\Panely`에 남으며, 이 폴더까지 지우면 모두 삭제됩니다.
+
+### 소스에서 빌드·설치·실행
+
+저장소를 받은 뒤 루트에서 설치 스크립트를 실행합니다.
 
 ```powershell
 git clone https://github.com/sejoung/PanelyWindows.git
@@ -149,7 +165,7 @@ powershell -ExecutionPolicy Bypass -File tools\publish.ps1 -Runtime win-arm64
 | `build.cmd` | 솔루션 빌드와 테스트 (`-Configuration Release`, `-SkipTests`, `-Filter Translation`, `-Clean`) |
 | `install-local.cmd` | 빌드·테스트·게시 후 로컬 설치·실행 (`-SkipTests`, `-Samples`, `-Isolated`, `-Open <경로>`) |
 | `uninstall-local.cmd` | 로컬 설치 제거 (`-RemoveDevData`, `-RemoveData`) |
-| `release.cmd` | `main`에서 검증 후 `VersionPrefix` 올림·커밋·태그·push (`patch`, `minor`, `major` 또는 `X.Y.Z`; `-DryRun`, `-SkipVerify`, `-Yes`) |
+| `release.cmd` | `main`에서 검증 후 `VersionPrefix`와 `app.manifest` 버전 올림·커밋·태그·push (`patch`, `minor`, `major` 또는 `X.Y.Z`; `-DryRun`, `-SkipVerify`, `-Yes`). 먼저 `docs/releases/vX.Y.Z.md`를 써서 커밋하세요. 릴리스 노트로 쓰입니다 |
 
 변경을 보내기 전에 `verify.cmd`를 실행하세요(약 40초, `-Quick`은 smoke 생략). 스타일 규칙은 `.editorconfig`에 있고 분석기 경고는 빌드를 실패시킵니다.
 

@@ -213,7 +213,8 @@ $skipPublish = $Quick -or $NoPublish -or $NoSmoke
 Invoke-Stage 'publish smoke' -Skip:($skipPublish -or -not $buildOk) -SkipReason $(if (-not $buildOk) { '빌드 실패' } else { '-Quick/-NoPublish' }) {
     $out = Join-Path $artifacts 'publish'
     if (Test-Path $out) { Remove-Item $out -Recurse -Force }
-    Exec @('publish', $AppProject, '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '-p:PublishReadyToRun=false', '-o', $out, '-nologo', '-v', 'quiet')
+    # 릴리스(tools\publish.ps1)와 같은 옵션으로 게시해 실제 배포본(ReadyToRun)을 smoke한다
+    Exec @('publish', $AppProject, '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '-p:PublishReadyToRun=true', '-p:DebugType=none', '-o', $out, '-nologo', '-v', 'quiet')
     $env:PANELY_SMOKE_EXE = Join-Path $out 'Panely.exe'
     try {
         Exec @('test', (Join-Path $RepoRoot 'tests\Panely.App.Tests\Panely.App.Tests.csproj'), '-c', 'Release', '--no-build', '-nologo', '--filter', 'Category=Smoke')
