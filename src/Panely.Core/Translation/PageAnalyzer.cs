@@ -83,10 +83,10 @@ public sealed class PageAnalyzer
         var regions = _recognizer.GetCapability(language).IsReady
             ? await _recognizer.RecognizeAsync(image, language, [rect], cancellationToken).ConfigureAwait(false)
             : [];
-        var groups = BalloonGrouper.Group(regions.Where(r => r.Rect.CoveredBy(rect) >= 0.3).ToList(), null, language);
-        var text = string.Join(Scripts.LineJoiner(language), groups.Select(g => g.Text)).Trim();
-        var vertical = groups.Count > 0 ? groups[0].IsVertical : rect.Height > rect.Width * 1.6 && TranslationLanguages.IsCjkVertical(language);
-        var glyph = groups.Count > 0 ? groups.Min(g => g.GlyphSize) : Math.Max(10, Math.Min(rect.Width, rect.Height) / 4);
+        var group = BalloonGrouper.GroupArea(regions.Where(r => r.Rect.CoveredBy(rect) >= 0.3).ToList(), language);
+        var text = group?.Text ?? string.Empty;
+        var vertical = group?.IsVertical ?? (rect.Height > rect.Width * 1.6 && TranslationLanguages.IsCjkVertical(language));
+        var glyph = group is not null ? group.Lines.Min(l => l.GlyphSize) : Math.Max(10, Math.Min(rect.Width, rect.Height) / 4);
         var (bg, _) = BackgroundSampler.Sample(image, rect, glyph, null);
         return (text, glyph, vertical, bg);
     }

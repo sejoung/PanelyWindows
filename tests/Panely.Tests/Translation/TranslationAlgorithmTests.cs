@@ -229,6 +229,25 @@ public class BalloonGrouperTests
     }
 
     [Fact]
+    public void AreaKeepsNumbersAndReadsSideBySidePiecesInOrder()
+    {
+        // 표지판 "LUNA  12"를 OCR이 두 조각으로 읽은 경우. 풍선 묶기라면 "12"는 잡음으로 버리고 같은 높이는 오른쪽부터 읽는다.
+        var luna = H("LUNA", 330, 245, 70, 30);
+        var number = H("12", 410, 245, 30, 30);
+        var g = BalloonGrouper.GroupArea([number, luna], "en");
+        Assert.NotNull(g);
+        Assert.Equal("LUNA 12", g.Text);
+        Assert.Equal("LUNA", Assert.Single(BalloonGrouper.Group([number, luna], null, "en")).Text);
+    }
+
+    [Fact]
+    public void AreaStillDropsSymbolNoise()
+    {
+        Assert.Null(BalloonGrouper.GroupArea([H("!!", 0, 0, 20, 20), H("...", 50, 50, 20, 20)], "ja"));
+        Assert.Equal("3:00", BalloonGrouper.GroupArea([H("3:00", 0, 0, 40, 20)], "ja")?.Text);
+    }
+
+    [Fact]
     public void IdsOrderTopThenRightToLeftWhenSameTop()
     {
         var left = H("left one", 100, 100, 50, 20);

@@ -51,7 +51,8 @@ public sealed partial class TranslationFeature : ITranslationFeature, IDisposabl
         Service.Scheduler.JobRemoved += (_, _) => _ui.BeginInvoke(QueueStateChanged);
         Service.Exports.JobChanged += (_, _) => _ui.BeginInvoke(QueueStateChanged);
         Service.Exports.JobRemoved += (_, _) => _ui.BeginInvoke(QueueStateChanged);
-        Service.Edits.Changed += (_, _) => _ui.BeginInvoke(() => { _host?.InvalidateOverlay(); QueueStateChanged(); });
+        // 편집 막대의 고친·숨긴 수와 버튼(이 책 되돌리기, 숨긴 말풍선 모두 보이기)도 수정 기록을 따른다
+        Service.Edits.Changed += (_, _) => _ui.BeginInvoke(() => { _host?.InvalidateOverlay(); if (_editing) _editBar?.Refresh(); QueueStateChanged(); });
         Service.Models.Changed += (_, _) => _ui.BeginInvoke(QueueStateChanged);
         Service.Cache.Cleared += (_, _) => _ui.BeginInvoke(() => { ReloadBookState(); });
         services.State.Changed += (_, change) =>

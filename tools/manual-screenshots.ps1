@@ -4,7 +4,7 @@
   readme-screenshots.ps1과 같은 데모 만화·격리 데이터 폴더를 쓰고, 메뉴는 UI Automation으로 실행한다(키 입력 없음).
   말풍선 팝오버 화면만 실제 마우스로 한 번 클릭하며, 그 위치가 Panely 창일 때만 누른다.
 
-  준비: Release 빌드(또는 install-local.cmd)와 언어팩(말풍선 탐지, PP-OCR, 번역 빠름).
+  준비: Release 빌드(또는 install-local.cmd)와 언어팩(말풍선 탐지, PP-OCR, 번역).
   찍는 동안 Panely 창이 여러 번 열리고 닫힌다. 마우스를 움직이지 말고 기다린다(약 3분).
 
 .EXAMPLE
@@ -225,6 +225,36 @@ function Click-InWindow($p, [int]$x, [int]$y) {
     }
 }
 
+# 화면 좌표(물리 픽셀)에서 끌어 사각형을 그린다. 버튼을 누른 채로 $whileHeld를 실행한다(선택 사각형 찍기).
+function Drag-InWindow($p, [int]$x1, [int]$y1, [int]$x2, [int]$y2, [scriptblock]$whileHeld = $null) {
+    $topmost = [IntPtr](-1); $notTopmost = [IntPtr](-2)
+    [ManualShot]::SetWindowPos($p.MainWindowHandle, $topmost, 0, 0, 0, 0, 0x0003) | Out-Null
+    try {
+        Start-Sleep -Milliseconds 300
+        foreach ($pt in @(@($x1, $y1), @($x2, $y2))) {
+            $at = New-Object ManualShot+POINT; $at.X = $pt[0]; $at.Y = $pt[1]
+            if ([ManualShot]::GetAncestor([ManualShot]::WindowFromPoint($at), 2) -ne $p.MainWindowHandle) { throw "끌 위치($($pt[0]),$($pt[1]))가 Panely 창이 아니어서 중단합니다." }
+        }
+        [ManualShot]::SetCursorPos($x1, $y1) | Out-Null
+        Start-Sleep -Milliseconds 150
+        [ManualShot]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+        try {
+            for ($i = 1; $i -le 12; $i++) {
+                [ManualShot]::SetCursorPos([int]($x1 + ($x2 - $x1) * $i / 12), [int]($y1 + ($y2 - $y1) * $i / 12)) | Out-Null
+                Start-Sleep -Milliseconds 30
+            }
+            Start-Sleep -Milliseconds 300
+            if ($whileHeld) { & $whileHeld }
+        } finally {
+            [ManualShot]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+        }
+        Start-Sleep -Milliseconds 200
+        [ManualShot]::SetCursorPos(5, 5) | Out-Null
+    } finally {
+        [ManualShot]::SetWindowPos($p.MainWindowHandle, $notTopmost, 0, 0, 0, 0, 0x0003) | Out-Null
+    }
+}
+
 function Get-Rect([IntPtr]$hwnd) {
     $r = New-Object ManualShot+RECT
     [ManualShot]::GetWindowRect($hwnd, [ref]$r) | Out-Null
@@ -273,6 +303,8 @@ function Wants([string]$name) { return $Only.Count -eq 0 -or $Only -contains $na
 function Shoot([string]$name, [string]$lang, [scriptblock]$action, [bool]$translate = $true, [string]$layout = 'double', [int]$pageIndex = 1) {
     if (-not (Wants $name)) { return }
     Set-State $lang $translate $layout $pageIndex
+    # 앞 화면에서 고치거나 추가한 말풍선이 남지 않게 한다
+    Remove-Item (Join-Path $data 'Data\edits') -Recurse -Force -ErrorAction SilentlyContinue
     $p = Start-Panely $book
     try {
         if ($translate) { Wait-Translation } else { Start-Sleep -Seconds 4 }
@@ -343,6 +375,15 @@ foreach ($lang in $Languages) {
         # 펼침면 왼쪽 위 말풍선("Did we miss it?")
         $k = $windowW / 1600.0
         Click-InWindow $p ([int](40 + 724 * $k)) ([int](40 + 300 * $k)); Start-Sleep -Milliseconds 800 }
+    # 번역되지 않은 역 표지판("LUNA 12")을 끌어 말풍선을 추가한다. 끄는 중(add-balloon-drag)과 추가한 말풍선의 팝오버(add-balloon)
+    Shoot 'add-balloon' $lang { param($p)
+        Invoke-Menu $p $n.View $n.EditBalloons; Start-Sleep -Milliseconds 800
+        $k = $windowW / 1600.0
+        Drag-InWindow $p ([int](40 + 316 * $k)) ([int](40 + 234 * $k)) ([int](40 + 462 * $k)) ([int](40 + 286 * $k)) {
+            Save-Window $p.MainWindowHandle "add-balloon-drag-$lang" $p }
+        # 글자 인식과 번역이 끝나 말풍선에 번역이 그려질 때까지
+        Start-Sleep -Seconds 8
+        Click-InWindow $p ([int](40 + 389 * $k)) ([int](40 + 260 * $k)); Start-Sleep -Milliseconds 800 }
     Shoot 'ai-chat' $lang { param($p) Invoke-ButtonMenu $p $n.ChooseLanguage $n.AiChat; Wait-OtherWindow $p }
     Shoot 'export' $lang { param($p) Invoke-Menu $p $n.File $n.Export; Wait-OtherWindow $p }
     # 마지막 펼침(6쪽)의 다음 권 카드

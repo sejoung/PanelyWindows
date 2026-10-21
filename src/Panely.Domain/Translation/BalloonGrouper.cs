@@ -22,16 +22,7 @@ public static class BalloonGrouper
 
     public static List<BalloonGroup> Group(IReadOnlyList<TextRegion> rawRegions, IReadOnlyList<DetectedRegion>? detections, string language)
     {
-        // 정규화와 잡음 제거
-        var regions = new List<TextRegion>();
-        foreach (var r in rawRegions)
-        {
-            var text = Scripts.Normalize(r.Text);
-            if (TranslationLanguages.IsCjkVertical(language)) text = Scripts.RemoveCjkSpaces(text);
-            if (text.Length == 0 || !Scripts.HasOwnScript(text, language) || Scripts.LooksLikeMixedGarbage(text, language) || Scripts.IsLoneParticle(text, language)) continue;
-            if (r.Rect.IsEmpty) continue;
-            regions.Add(r with { Text = text });
-        }
+        var regions = Clean(rawRegions, language, keepNumbers: false);
 
         var groups = new List<(List<TextRegion> Lines, RectD? Balloon)>();
         var unassigned = new List<TextRegion>();
@@ -63,21 +54,49 @@ public static class BalloonGrouper
             groups.Add((component, null));
 
         var built = new List<BalloonGroup>();
-        var joiner = Scripts.LineJoiner(language);
-        var cjk = TranslationLanguages.IsCjkVertical(language);
         foreach (var (lines, balloonRect) in groups)
-        {
-            var ordered = OrderLines(lines, cjk);
-            var rect = ordered.Aggregate(new RectD(0, 0, 0, 0), (acc, l) => acc.Union(l.Rect));
-            var verticalCount = ordered.Count(l => l.IsVertical);
-            var glyphs = ordered.Select(l => l.GlyphSize).Where(g => g > 0).OrderBy(g => g).ToList();
-            var glyph = glyphs.Count > 0 ? glyphs[glyphs.Count / 2] : Math.Max(8, Math.Min(rect.Width, rect.Height));
-            var text = string.Join(joiner, ordered.Select(l => l.Text)).Trim();
-            if (text.Length == 0) continue;
-            built.Add(new BalloonGroup(0, rect, text, verticalCount * 2 > ordered.Count, glyph, balloonRect, ordered));
-        }
+            if (Build(lines, balloonRect, language) is { } group) built.Add(group);
 
         return AssignIds(built);
+    }
+
+    /// <summary>
+    /// 사용자가 지정한 영역(말풍선 추가)의 줄을 한 풍선으로 묶는다. 영역을 사람이 골랐으므로
+    /// 글자 없이 숫자만 있는 줄("LUNA 12"의 "12")도 남기고, 같은 줄에 나란히 놓인 조각은 읽는 순서로 잇는다.
+    /// </summary>
+    public static BalloonGroup? GroupArea(IReadOnlyList<TextRegion> rawRegions, string language)
+    {
+        var lines = Clean(rawRegions, language, keepNumbers: true);
+        return lines.Count == 0 ? null : Build(lines, null, language);
+    }
+
+    /// <summary>정규화와 잡음 제거. keepNumbers면 글자 없이 숫자(와 기호)만 있는 줄도 남긴다.</summary>
+    private static List<TextRegion> Clean(IReadOnlyList<TextRegion> rawRegions, string language, bool keepNumbers)
+    {
+        var regions = new List<TextRegion>();
+        foreach (var r in rawRegions)
+        {
+            var text = Scripts.Normalize(r.Text);
+            if (TranslationLanguages.IsCjkVertical(language)) text = Scripts.RemoveCjkSpaces(text);
+            if (text.Length == 0 || Scripts.LooksLikeMixedGarbage(text, language) || Scripts.IsLoneParticle(text, language)) continue;
+            if (!Scripts.HasOwnScript(text, language) && !(keepNumbers && IsNumber(text))) continue;
+            if (r.Rect.IsEmpty) continue;
+            regions.Add(r with { Text = text });
+        }
+        return regions;
+    }
+
+    private static bool IsNumber(string text) => text.Any(char.IsDigit) && !text.Any(char.IsLetter);
+
+    private static BalloonGroup? Build(List<TextRegion> lines, RectD? balloonRect, string language)
+    {
+        var ordered = OrderLines(lines, TranslationLanguages.IsCjkVertical(language));
+        var rect = ordered.Aggregate(new RectD(0, 0, 0, 0), (acc, l) => acc.Union(l.Rect));
+        var verticalCount = ordered.Count(l => l.IsVertical);
+        var glyphs = ordered.Select(l => l.GlyphSize).Where(g => g > 0).OrderBy(g => g).ToList();
+        var glyph = glyphs.Count > 0 ? glyphs[glyphs.Count / 2] : Math.Max(8, Math.Min(rect.Width, rect.Height));
+        var text = string.Join(Scripts.LineJoiner(language), ordered.Select(l => l.Text)).Trim();
+        return text.Length == 0 ? null : new BalloonGroup(0, rect, text, verticalCount * 2 > ordered.Count, glyph, balloonRect, ordered);
     }
 
     private static DetectedRegion? FindContainer(TextRegion region, List<DetectedRegion> textBoxes, List<DetectedRegion> balloons)
