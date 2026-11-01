@@ -33,6 +33,9 @@ public sealed class StateStore : IStateStore, IDisposable
     private bool _dirty;
     private bool _timerArmed;
     private bool _disposed;
+    // Sources 조회 색인(파일 트리는 행마다 경로로 찾는다). _gate 안에서만 쓰고, 목록이 바뀌면 다시 만든다.
+    private Dictionary<string, SourceDto>? _sourcesByPath;
+    private Dictionary<Guid, SourceDto>? _sourcesById;
 
     public StateStore(AppPaths paths, IDiagnostics diagnostics) : this(paths, diagnostics, TimeSpan.FromSeconds(2), TimeSpan.FromMilliseconds(300)) { }
 
@@ -189,6 +192,8 @@ public sealed class StateStore : IStateStore, IDisposable
             var before = _doc.Sources.Count;
             _doc.Sources.RemoveAll(s => !referenced.Contains(s.Id));
             if (_doc.Sources.Count != before) changed = true;
+            _sourcesByPath = null;
+            _sourcesById = null;
             if (changed) ScheduleSave(immediate: false);
         }
     }
@@ -222,12 +227,12 @@ public sealed class StateStore : IStateStore, IDisposable
         // 쓰기를 기다리지 않게. _writeGate가 직렬화와 쓰기를 한 단위로 묶어 오래된 내용이 새 내용을 덮지 않는다.
         lock (_writeGate)
         {
-            string json;
+            byte[] json;
             lock (_gate)
             {
                 _timerArmed = false;
                 if (!_dirty || IsReadOnly) return;
-                json = JsonSerializer.Serialize(_doc, StateJson.Options);
+                json = JsonSerializer.SerializeToUtf8Bytes(_doc, StateJson.Options);
                 _dirty = false;
             }
             try
@@ -242,16 +247,14 @@ public sealed class StateStore : IStateStore, IDisposable
         }
     }
 
-    private void WriteAtomic(string json)
+    private void WriteAtomic(byte[] json)
     {
         var dir = Path.GetDirectoryName(_statePath)!;
         Directory.CreateDirectory(dir);
         var tmp = Path.Combine(dir, $"state.json.{Guid.NewGuid():N}.tmp");
         using (var fs = new FileStream(tmp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-        using (var writer = new StreamWriter(fs, new System.Text.UTF8Encoding(false)))
         {
-            writer.Write(json);
-            writer.Flush();
+            fs.Write(json);
             fs.Flush(flushToDisk: true);
         }
         try
@@ -314,7 +317,7 @@ public sealed class StateStore : IStateStore, IDisposable
         SourceRef result;
         lock (_gate)
         {
-            var existing = _doc.Sources.FirstOrDefault(s => string.Equals(s.Path, normalized, StringComparison.OrdinalIgnoreCase));
+            var existing = FindByPathLocked(normalized);
             if (existing is not null)
             {
                 if (fileId.Length > 0 && (existing.FileId != fileId || existing.VolumeId != volumeId))
@@ -339,6 +342,7 @@ public sealed class StateStore : IStateStore, IDisposable
                     _diagnostics.Log(LogLevel.Info, LogCategory.Persistence, "Source moved; reference path updated");
                     moved.Path = normalized;
                     moved.Title = title;
+                    _sourcesByPath = null;
                     result = moved.ToRef();
                 }
                 else
@@ -353,6 +357,8 @@ public sealed class StateStore : IStateStore, IDisposable
                         FileId = fileId.Length > 0 ? fileId : null,
                     };
                     _doc.Sources.Add(dto);
+                    _sourcesByPath?.TryAdd(dto.Path, dto);
+                    _sourcesById?.TryAdd(dto.Id, dto);
                     result = dto.ToRef();
                 }
                 change = StateChange.Sources;
@@ -371,13 +377,31 @@ public sealed class StateStore : IStateStore, IDisposable
 
     public SourceRef? FindSource(Guid id)
     {
-        lock (_gate) return _doc.Sources.FirstOrDefault(s => s.Id == id)?.ToRef();
+        lock (_gate)
+        {
+            if (_sourcesById is null)
+            {
+                _sourcesById = new Dictionary<Guid, SourceDto>(_doc.Sources.Count);
+                foreach (var s in _doc.Sources) _sourcesById.TryAdd(s.Id, s);
+            }
+            return _sourcesById.TryGetValue(id, out var found) ? found.ToRef() : null;
+        }
     }
 
     public SourceRef? FindSourceByPath(string path)
     {
         var normalized = NormalizePath(path);
-        lock (_gate) return _doc.Sources.FirstOrDefault(s => string.Equals(s.Path, normalized, StringComparison.OrdinalIgnoreCase))?.ToRef();
+        lock (_gate) return FindByPathLocked(normalized)?.ToRef();
+    }
+
+    private SourceDto? FindByPathLocked(string normalizedPath)
+    {
+        if (_sourcesByPath is null)
+        {
+            _sourcesByPath = new Dictionary<string, SourceDto>(_doc.Sources.Count, StringComparer.OrdinalIgnoreCase);
+            foreach (var s in _doc.Sources) _sourcesByPath.TryAdd(s.Path, s);
+        }
+        return _sourcesByPath.TryGetValue(normalizedPath, out var found) ? found : null;
     }
 
     public IReadOnlyList<SourceRef> Sources

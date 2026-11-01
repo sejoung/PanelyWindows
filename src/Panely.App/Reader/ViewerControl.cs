@@ -492,7 +492,7 @@ public sealed class ViewerControl : FrameworkElement
         double vTop, vBottom;
         if (_layout.Size.Height <= viewH) { vTop = 0; vBottom = _layout.Size.Height; }
         else { vTop = top; vBottom = top + viewH; }
-        var current = VerticalStrip.CurrentPage(_verticalHeights, vTop, vBottom);
+        var current = VerticalStrip.CurrentPage(_verticalHeights, _verticalTops, vTop, vBottom);
         if (current != _session.PageIndex)
         {
             _syncingFromScroll = true;
@@ -528,6 +528,13 @@ public sealed class ViewerControl : FrameworkElement
     {
         _overlayCache.Clear();
         InvalidateVisual();
+    }
+
+    /// <summary>한 쪽의 오버레이만 다시 만든다. 화면에 있는 쪽일 때만 다시 그린다.</summary>
+    public void InvalidatePageOverlay(int pageIndex)
+    {
+        _overlayCache.Remove(pageIndex);
+        if (FramesToDraw().Any(f => f.LogicalIndex == pageIndex)) InvalidateVisual();
     }
 
     private IEnumerable<PageFrame> FramesToDraw()

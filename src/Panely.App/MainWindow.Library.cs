@@ -13,10 +13,22 @@ namespace Panely.App;
 public partial class MainWindow
 {
     private readonly Dictionary<Guid, SourceAvailability> _availabilityMap = new();
+    private readonly DispatcherTimer _progressRefreshTimer = new(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
+    private readonly Dictionary<string, Task<BitmapSource?>> _bookmarkThumbs = new(StringComparer.Ordinal);
+    private readonly SemaphoreSlim _bookmarkThumbGate = new(2);
+    private CancellationTokenSource _bookmarkThumbCts = new();
+    private OpenedBook? _bookmarkThumbBook;
     private bool _sidebarRefreshPending;
+    private bool _sidebarDirty;
+    private bool _availabilityRunning;
 
     private void WireLibrary()
     {
+        _progressRefreshTimer.Tick += (_, _) =>
+        {
+            _progressRefreshTimer.Stop();
+            RefreshSidebarSoon();
+        };
         _sidebar.AttachLibrary(_library);
         _sidebar.OpenRequested += r => _ = OpenRequestAsync(r);
         _sidebar.PageRequested += i => _session.Jump(i);
@@ -156,6 +168,13 @@ public partial class MainWindow
         Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
         {
             _sidebarRefreshPending = false;
+            // 숨겨진 사이드바는 다시 만들지 않고 열릴 때 한 번에 맞춘다
+            if (!_state.Settings.SidebarPinned && !_libraryOverlayOpen)
+            {
+                _sidebarDirty = true;
+                UpdateToolbar();
+                return;
+            }
             RefreshSidebar();
         });
     }
@@ -168,6 +187,7 @@ public partial class MainWindow
 
     private void RefreshSidebar()
     {
+        _sidebarDirty = false;
         var book = _session.Book;
         ContinueEntry? cont = null;
         try
@@ -253,29 +273,53 @@ public partial class MainWindow
         return null;
     }
 
-    private async Task<BitmapSource?> LoadBookmarkThumbnail(int index)
+    /// <summary>책 안에서 쪽마다 한 번만 만들고 동시에 2개까지 읽는다. 책이 바뀌면 남은 요청을 취소한다.</summary>
+    private Task<BitmapSource?> LoadBookmarkThumbnail(int index)
     {
         var book = _session.Book;
-        if (book is null || index < 0 || index >= book.Pages.Count) return null;
+        if (book is null || index < 0 || index >= book.Pages.Count) return Task.FromResult<BitmapSource?>(null);
+        if (!ReferenceEquals(_bookmarkThumbBook, book))
+        {
+            _bookmarkThumbCts.Cancel();
+            _bookmarkThumbCts.Dispose();
+            _bookmarkThumbCts = new CancellationTokenSource();
+            _bookmarkThumbs.Clear();
+            _bookmarkThumbBook = book;
+        }
         var page = book.Pages[index];
+        if (_bookmarkThumbs.TryGetValue(page.PageId, out var existing)) return existing;
         var decoder = _services.Decoder;
-        return await Task.Run(async () =>
+        var gate = _bookmarkThumbGate;
+        var token = _bookmarkThumbCts.Token;
+        var task = Task.Run(async () =>
         {
             try
             {
-                var bytes = await book.Data.ReadAsync(page, CancellationToken.None).ConfigureAwait(false);
-                return decoder.Decode(bytes, page.Extension, 48);
+                await gate.WaitAsync(token).ConfigureAwait(false);
+                try
+                {
+                    var bytes = await book.Data.ReadAsync(page, token).ConfigureAwait(false);
+                    return decoder.Decode(bytes, page.Extension, 48);
+                }
+                finally
+                {
+                    gate.Release();
+                }
             }
             catch (Exception)
             {
-                return null;
+                return (BitmapSource?)null;
             }
-        });
+        }, CancellationToken.None);
+        _bookmarkThumbs[page.PageId] = task;
+        return task;
     }
 
     /// <summary>앱 활성화 시 최근/이어보기 가용성을 백그라운드로 갱신(이동식 드라이브 분리 시 자동 삭제하지 않음).</summary>
     private void RefreshAvailability()
     {
+        if (_availabilityRunning) return; // 창 전환을 반복해도 검사가 겹치지 않게
+        _availabilityRunning = true;
         var sources = _state.Recents.Select(r => _state.FindSource(r.SourceId)).Where(s => s is not null).Cast<SourceRef>()
             .Concat(_state.AllProgress.Keys.Select(k => BookKeys.TryParse(k, out var id, out _) ? _state.FindSource(id) : null).Where(s => s is not null).Cast<SourceRef>())
             .DistinctBy(s => s.Id).Take(200).ToList();
@@ -289,13 +333,14 @@ public partial class MainWindow
             }
             await Dispatcher.InvokeAsync(() =>
             {
+                _availabilityRunning = false;
                 var changed = false;
                 foreach (var (id, a) in results)
                 {
                     if (!_availabilityMap.TryGetValue(id, out var old) || old != a) changed = true;
                     _availabilityMap[id] = a;
                 }
-                if (changed) RefreshSidebar();
+                if (changed) RefreshSidebarSoon();
             });
         });
     }

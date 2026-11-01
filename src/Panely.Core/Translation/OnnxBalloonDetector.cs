@@ -11,7 +11,7 @@ namespace Panely.Core.Translation;
 /// 입력/출력 이름은 manifest에서 읽는다. 검증된 모델이 설치되지 않았으면 사용 불가(탐지 없이 연결 요소로 묶는다).
 /// 긴 이미지는 탐지 청크로 잘라 seam 결과를 제외하고 같은 kind 중복을 제거한다.
 /// </summary>
-public sealed class OnnxBalloonDetector : IBalloonDetector, IDisposable
+public sealed class OnnxBalloonDetector : IBalloonDetector, IIdleReleasable, IDisposable
 {
     public const int InputSize = 640;
     private readonly ModelStore _store;
@@ -43,10 +43,7 @@ public sealed class OnnxBalloonDetector : IBalloonDetector, IDisposable
     public async Task<IReadOnlyList<DetectedRegion>?> DetectAsync(PagePixels image, CancellationToken cancellationToken)
     {
         if (!Capability.IsReady) return null;
-        var session = EnsureSession();
-        if (session is null) return null;
         var manifest = _store.Find(ModelCatalog.DetectorId)!;
-        var inputName = manifest.InputString("name") ?? session.InputMetadata.Keys.First();
         var sizesName = manifest.InputString("targetSizes");
         var scoresName = manifest.OutputString("scores") ?? "scores";
         var boxesName = manifest.OutputString("boxes") ?? "boxes";
@@ -64,6 +61,10 @@ public sealed class OnnxBalloonDetector : IBalloonDetector, IDisposable
             await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                // 유휴 해제와 겹치지 않게 세션은 잠금 안에서 받는다
+                var session = EnsureSession();
+                if (session is null) return null;
+                var inputName = manifest.InputString("name") ?? session.InputMetadata.Keys.First();
                 var inputs = new List<NamedOnnxValue> { NamedOnnxValue.CreateFromTensor(inputName, tensor) };
                 // RT-DETR deploy export는 orig_target_sizes 입력을 요구한다. 640×640을 넣고 결과를 원래 크기로 환산한다.
                 foreach (var extra in session.InputMetadata.Keys.Where(k => k != inputName && (sizesName is null || k == sizesName)))
@@ -103,17 +104,37 @@ public sealed class OnnxBalloonDetector : IBalloonDetector, IDisposable
     {
         var resized = image.Resize(InputSize, InputSize);
         var tensor = new DenseTensor<float>([1, 3, InputSize, InputSize]);
+        // 인덱서는 접근마다 int[]를 할당하므로 버퍼에 바로 쓴다
+        var data = tensor.Buffer.Span;
+        var bgra = resized.Bgra;
+        const int Plane = InputSize * InputSize;
         for (var y = 0; y < InputSize; y++)
         {
             for (var x = 0; x < InputSize; x++)
             {
                 var i = y * resized.Stride + x * 4;
-                tensor[0, 0, y, x] = resized.Bgra[i + 2] / 255f;
-                tensor[0, 1, y, x] = resized.Bgra[i + 1] / 255f;
-                tensor[0, 2, y, x] = resized.Bgra[i] / 255f;
+                var o = y * InputSize + x;
+                data[o] = bgra[i + 2] / 255f;
+                data[Plane + o] = bgra[i + 1] / 255f;
+                data[2 * Plane + o] = bgra[i] / 255f;
             }
         }
         return tensor;
+    }
+
+    public async Task ReleaseIdleAsync(CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            _session?.Dispose();
+            _session = null;
+            _sessionRevision = null;
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     private InferenceSession? EnsureSession()

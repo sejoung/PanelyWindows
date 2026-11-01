@@ -535,15 +535,37 @@ public sealed class BookOpener : IBookOpener
 
         public (List<VolumeEntry> List, int Index) ToVolumeEntries()
         {
+            var folders = FolderNamesIn(Directory);
             var list = Entries.Select(e => new VolumeEntry
             {
                 DisplayName = DisplayName(e),
                 Path = e,
                 InnerPath = null,
-                IsArchive = File.Exists(e),
+                IsArchive = IsFile(e, folders),
                 IsNested = false,
             }).ToList();
             return (list, IndexOf(Entries, Entry));
+        }
+
+        /// <summary>권 목록의 파일/폴더 구분을 항목마다 조회하지 않게 부모 폴더를 한 번만 읽는다(NAS 왕복 절약). 실패하면 null.</summary>
+        private static HashSet<string>? FolderNamesIn(string directory)
+        {
+            try
+            {
+                return new HashSet<string>(new DirectoryInfo(directory).EnumerateDirectories().Select(d => d.Name), StringComparer.OrdinalIgnoreCase);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+            {
+                return null;
+            }
+        }
+
+        private bool IsFile(string entry, HashSet<string>? folders)
+        {
+            var inDirectory = folders is not null && string.Equals(Path.GetDirectoryName(entry)?.TrimEnd('\\'), Directory.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
+            if (!inDirectory) return File.Exists(entry);
+            if (folders!.Contains(Path.GetFileName(entry))) return false;
+            return SupportedFormats.IsArchive(entry) || File.Exists(entry);
         }
     }
 }

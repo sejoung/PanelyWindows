@@ -34,7 +34,8 @@ public sealed class CacheLease : IDisposable
 /// key = SHA-256(`정규화경로|크기|mtimeMillis`) 전체 hex, 형식 버전 폴더(v1) 아래 저장.
 /// 완성된 entry만 히트로 인정하고, 새 해제는 독립 staging에서 끝낸 뒤 원자적으로 publish한다.
 /// lease가 있는 entry는 LRU와 수동 Clear 모두에서 제외한다.
-/// 디렉터리 구조: extraction/v1/entries/{key}/content/, extraction/v1/entries/{key}/entry.json, extraction/v1/staging/.
+/// 디렉터리 구조: extraction/v1/entries/{key}/content/, extraction/v1/entries/{key}/entry.json, extraction/v1/staging/,
+/// extraction/v1/trash/(지우는 중인 폴더. 잠금 안에서는 여기로 옮기기만 하고 삭제는 잠금 밖에서 한다, ADR 0009).
 /// </summary>
 public sealed class ExtractionCache : IExtractionCache
 {
@@ -44,6 +45,7 @@ public sealed class ExtractionCache : IExtractionCache
     private readonly IDiagnostics _diagnostics;
     private readonly string _entriesDir;
     private readonly string _stagingDir;
+    private readonly string _trashDir;
     private readonly object _gate = new();
     private readonly Dictionary<string, int> _leases = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _keyLocks = new(StringComparer.Ordinal);
@@ -57,11 +59,16 @@ public sealed class ExtractionCache : IExtractionCache
         var root = Path.Combine(paths.ExtractionCache, $"v{FormatVersion}");
         _entriesDir = Path.Combine(root, "entries");
         _stagingDir = Path.Combine(root, "staging");
+        _trashDir = Path.Combine(root, "trash");
         Directory.CreateDirectory(_entriesDir);
         Directory.CreateDirectory(_stagingDir);
+        Directory.CreateDirectory(_trashDir);
     }
 
     public long LimitBytes { get; }
+
+    /// <summary>lease 해제 뒤의 예산 정리를 worker에서 한다. 앱은 켜고(책을 닫는 UI 스레드를 막지 않게), 기본은 호출 스레드에서 끝낸다.</summary>
+    public bool EnforceInBackground { get; init; }
 
     /// <summary>현재 로딩 중이면 UI가 Clear를 비활성화한다(참고용 플래그).</summary>
     public bool IsBusy => _keyLocks.Values.Any(s => s.CurrentCount == 0);
@@ -161,25 +168,60 @@ public sealed class ExtractionCache : IExtractionCache
     public Task<long> ClearAsync(CancellationToken cancellationToken) => Task.Run(() =>
     {
         long removed = 0;
+        var trash = new List<string>();
+        var entries = EnumerateEntries().ToList();
         lock (_gate)
         {
-            foreach (var (key, meta) in EnumerateEntries().ToList())
+            foreach (var (key, meta) in entries)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (_leases.ContainsKey(key)) continue;
                 if (_keyLocks.TryGetValue(key, out var l) && l.CurrentCount == 0) continue;
-                if (TryDeleteDirectory(EntryDir(key))) removed += meta.Bytes;
+                if (DetachEntry(key) is { } detached)
+                {
+                    trash.Add(detached);
+                    removed += meta.Bytes;
+                }
             }
         }
+        foreach (var dir in trash) TryDeleteDirectory(dir);
         _diagnostics.Log(Domain.Model.LogLevel.Info, LogCategory.Cache, $"Extraction cache cleared ({removed} bytes)");
         return removed;
     }, cancellationToken);
 
-    public void CleanupOrphans()
+    /// <summary>시작할 때 호출: 지난 실행의 staging을 해제 작업과 겹치지 않는 곳으로 옮긴다(이름 변경이라 빠르다).</summary>
+    public void DetachStaleStaging()
     {
         try
         {
-            foreach (var dir in Directory.GetDirectories(_stagingDir)) TryDeleteDirectory(dir);
+            foreach (var dir in Directory.GetDirectories(_stagingDir))
+            {
+                try { Directory.Move(dir, Path.Combine(_trashDir, $"staging-{Guid.NewGuid():N}")); }
+                catch (IOException) { TryDeleteDirectory(dir); }
+                catch (UnauthorizedAccessException) { TryDeleteDirectory(dir); }
+            }
+        }
+        catch (IOException ex)
+        {
+            _diagnostics.Log(Domain.Model.LogLevel.Warning, LogCategory.Cache, $"Orphan cleanup failed: {ex.GetType().Name}");
+        }
+    }
+
+    public void CleanupOrphans()
+    {
+        DetachStaleStaging();
+        FinishOrphanCleanup();
+    }
+
+    /// <summary>
+    /// 치워 둔 폴더·미완료 entry·이전 형식 폴더를 지우고 예산을 맞춘다. 파일이 많으면 오래 걸리므로 worker에서 호출할 수 있다.
+    /// 새 entry는 entry.json을 쓴 뒤 원자적으로 publish되므로 진행 중인 해제와 겹쳐도 지우지 않는다.
+    /// </summary>
+    public void FinishOrphanCleanup()
+    {
+        try
+        {
+            foreach (var dir in Directory.GetDirectories(_trashDir)) TryDeleteDirectory(dir);
             // meta 없는 entry는 미완료로 간주
             foreach (var dir in Directory.GetDirectories(_entriesDir))
             {
@@ -203,19 +245,26 @@ public sealed class ExtractionCache : IExtractionCache
     /// <summary>LRU: 예산을 넘으면 lease 없는 오래된 entry부터 지운다. lease 때문에 잠깐 초과할 수 있다.</summary>
     public void Enforce()
     {
+        // 파일 읽기와 삭제는 잠금 밖에서 한다. 잠금 안에서는 이름만 바꿔 entry를 떼어 낸다.
+        var entries = EnumerateEntries().ToList();
+        var total = entries.Sum(e => e.Meta.Bytes);
+        if (total <= LimitBytes) return;
+        var trash = new List<string>();
         lock (_gate)
         {
-            var entries = EnumerateEntries().ToList();
-            var total = entries.Sum(e => e.Meta.Bytes);
-            if (total <= LimitBytes) return;
             foreach (var (key, meta) in entries.OrderBy(e => e.Meta.LastAccess))
             {
                 if (total <= LimitBytes) break;
                 if (_leases.ContainsKey(key)) continue;
                 if (_keyLocks.TryGetValue(key, out var l) && l.CurrentCount == 0) continue;
-                if (TryDeleteDirectory(EntryDir(key))) total -= meta.Bytes;
+                if (DetachEntry(key) is { } detached)
+                {
+                    trash.Add(detached);
+                    total -= meta.Bytes;
+                }
             }
         }
+        foreach (var dir in trash) TryDeleteDirectory(dir);
     }
 
     internal void Release(string key)
@@ -227,7 +276,29 @@ public sealed class ExtractionCache : IExtractionCache
                 if (n <= 1) _leases.Remove(key); else _leases[key] = n - 1;
             }
         }
-        Enforce();
+        if (!EnforceInBackground)
+        {
+            Enforce();
+            return;
+        }
+        _ = Task.Run(() =>
+        {
+            try { Enforce(); }
+            catch (Exception ex) { _diagnostics.Log(Domain.Model.LogLevel.Warning, LogCategory.Cache, $"Cache cleanup failed: {ex.GetType().Name}"); }
+        });
+    }
+
+    /// <summary>_gate 안에서 호출. entry를 휴지통 폴더로 옮겨 떼어 낸다. 사용 중이라 옮기지 못하면 null.</summary>
+    private string? DetachEntry(string key)
+    {
+        var target = Path.Combine(_trashDir, $"{key}-{Guid.NewGuid():N}");
+        try
+        {
+            Directory.Move(EntryDir(key), target);
+            return target;
+        }
+        catch (IOException) { return null; }
+        catch (UnauthorizedAccessException) { return null; }
     }
 
     public bool IsLeased(string key)

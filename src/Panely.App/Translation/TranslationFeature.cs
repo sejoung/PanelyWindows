@@ -61,6 +61,12 @@ public sealed partial class TranslationFeature : ITranslationFeature, IDisposabl
         };
         Loc.LanguageChanged += (_, _) => _ui.BeginInvoke(() => { RebuildOpenUi(); QueueStateChanged(); });
         _wasEnabled = IsEnabled;
+        // 수정 기록은 첫 사용 때 전부 읽는다. 첫 오버레이를 그리는 UI 스레드에서 읽지 않게 미리 올려 둔다.
+        _ = Task.Run(() =>
+        {
+            try { _ = Service.Edits.EditedPageCount; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        });
     }
 
     /// <summary>번역 계층(테스트·진단용 접근).</summary>
@@ -201,7 +207,8 @@ public sealed partial class TranslationFeature : ITranslationFeature, IDisposabl
     /// <summary>보이는 범위 ±2의 캐시를 비동기로 읽는다(디스크 I/O는 worker).</summary>
     private void LoadVisiblePages()
     {
-        if (_host is null || _book is null || _visible is null || _source is null) return;
+        if (_host is null) return;
+        if (_book is null || _visible is null || _source is null) { _host.InvalidateOverlay(); return; }
         var range = _host.VisibleRange;
         var book = _book;
         var target = _visible;
@@ -232,11 +239,17 @@ public sealed partial class TranslationFeature : ITranslationFeature, IDisposabl
             set.Add(u.PageIndex);
             if (u.Target == _visible) _translated.Add(u.PageIndex);
         }
-        if (_visible is null && u.Target == PreferredTarget() && State.Settings.TranslationOverlayVisible) _visible = u.Target;
+        var becameVisible = false;
+        if (_visible is null && u.Target == PreferredTarget() && State.Settings.TranslationOverlayVisible)
+        {
+            _visible = u.Target;
+            becameVisible = true; // 사용자 수정만 있는 다른 쪽도 함께 보이기 시작한다
+        }
         if (u.Target == _visible)
         {
             _pages[u.PageIndex] = u.Page;
-            _host?.InvalidateOverlay();
+            if (becameVisible) _host?.InvalidateOverlay();
+            else _host?.InvalidatePageOverlay(u.PageIndex);
         }
         QueueStateChanged();
     }
@@ -316,10 +329,19 @@ public sealed partial class TranslationFeature : ITranslationFeature, IDisposabl
     public void ToggleOriginal()
     {
         if (!CanToggleOriginal) return;
-        if (_visible is null) { _visible = TranslationLanguages.All.FirstOrDefault(HasResults) ?? PreferredTarget(); State.UpdateSettings(s => s.TranslationOverlayVisible = true); }
-        else State.UpdateSettings(s => s.TranslationOverlayVisible = !s.TranslationOverlayVisible);
-        _pages.Clear();
-        ReloadBookState();
+        if (_visible is null)
+        {
+            _visible = TranslationLanguages.All.FirstOrDefault(HasResults) ?? PreferredTarget();
+            State.UpdateSettings(s => s.TranslationOverlayVisible = true);
+            _pages.Clear();
+            ReloadBookState();
+        }
+        else
+        {
+            // 보이는 언어가 그대로면 읽어 둔 쪽을 다시 쓴다(전체 캐시를 다시 확인하는 동안 오버레이가 비지 않게)
+            State.UpdateSettings(s => s.TranslationOverlayVisible = !s.TranslationOverlayVisible);
+            LoadVisiblePages();
+        }
         _host?.InvalidateOverlay();
         QueueStateChanged();
     }

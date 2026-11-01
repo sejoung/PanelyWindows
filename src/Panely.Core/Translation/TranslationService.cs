@@ -16,9 +16,12 @@ public sealed class TranslationService : IAsyncDisposable
         Paths = paths;
         State = state;
         Models = new ModelStore(paths.Models);
-        Models.CleanupStaging();
-        // 이전 버전의 M2M100 팩(최대 약 2.9GB)은 쓰지 않는다. 지우는 데 시간이 걸릴 수 있어 백그라운드에서 지운다.
-        _ = Task.Run(() => Models.RemoveObsolete(ModelCatalog.ObsoleteIds));
+        // 남은 임시 다운로드와 이전 버전의 M2M100 팩(최대 약 2.9GB)은 지우는 데 시간이 걸릴 수 있어 백그라운드에서 지운다.
+        _ = Task.Run(() =>
+        {
+            Models.CleanupStaging();
+            Models.RemoveObsolete(ModelCatalog.ObsoleteIds);
+        });
         Providers = providers ?? CreateDefaultProviders(Models);
         Cache = new TranslationCache(paths.TranslationCache);
         Edits = new PageEditsStore(paths.Edits);

@@ -36,6 +36,10 @@ public partial class LibrarySidebar : UserControl
 {
     private readonly TreeView _tree = new() { Margin = new Thickness(-4, 0, 0, 0) };
     private readonly TextBlock _treeEmpty = new() { Margin = new Thickness(8, 2, 8, 8), Visibility = Visibility.Collapsed };
+    /// <summary>이어보기·권·즐겨찾기·북마크 섹션. 파일 트리와 분리해 이 부분이 바뀌어도 트리를 다시 붙이지 않는다.</summary>
+    private readonly StackPanel _dataPanel = new();
+    private readonly StackPanel _filesPanel = new();
+    private FrameworkElement? _continueRow;
     private readonly Dictionary<string, TreeViewItem> _nodes = new(StringComparer.OrdinalIgnoreCase);
     private ILibraryService? _library;
     private string? _rootPath;
@@ -45,6 +49,8 @@ public partial class LibrarySidebar : UserControl
     public LibrarySidebar()
     {
         InitializeComponent();
+        Sections.Children.Add(_dataPanel);
+        Sections.Children.Add(_filesPanel);
         RefreshButton.Click += (_, _) => RefreshRequested?.Invoke();
         PinButton.Click += (_, _) => { PinButton.IsChecked = !PinButton.IsChecked; PinToggled?.Invoke(); };
         _tree.SelectedItemChanged += (_, _) => { };
@@ -105,47 +111,81 @@ public partial class LibrarySidebar : UserControl
 
     // ───────────────────────── 섹션 ─────────────────────────
 
+    /// <summary>바뀐 부분만 반영한다. 이어보기 진행률만 바뀌면 그 행만 교체한다.</summary>
     public void SetData(SidebarData data)
     {
+        var old = _data;
         _data = data;
-        Rebuild();
+        if (SameExceptContinue(old, data))
+        {
+            if (old.Continue == data.Continue) return;
+            if (data.Continue is { } cont && _continueRow is not null)
+            {
+                var index = _dataPanel.Children.IndexOf(_continueRow);
+                _dataPanel.Children.RemoveAt(index);
+                _continueRow = ContinueRow(cont);
+                _dataPanel.Children.Insert(index, _continueRow);
+                return;
+            }
+        }
+        RebuildData();
+    }
+
+    private static bool SameExceptContinue(SidebarData a, SidebarData b)
+        => a.CurrentBookKey == b.CurrentBookKey
+           && a.Volumes.SequenceEqual(b.Volumes)
+           && a.Favorites.SequenceEqual(b.Favorites)
+           && a.CurrentBookmarks.SequenceEqual(b.CurrentBookmarks)
+           && a.OtherBookmarks.SequenceEqual(b.OtherBookmarks);
+
+    private FrameworkElement ContinueRow(ContinueEntry cont)
+    {
+        var row = Row(Icons.Archive, cont.Title, null, false, new ProgressMark(cont.Fraction, cont.Finished, true));
+        row.ToolTip = $"{cont.Title} · {Loc.T("%lld%% read", (long)Math.Round(cont.Fraction * 100))}";
+        row.MouseLeftButtonUp += (_, _) => Activate(cont.Request);
+        row.ContextMenu = Menu(MenuItem(Loc.T("Remove from Continue Reading"), () => RemoveContinueRequested?.Invoke(cont.BookKey)));
+        return row;
     }
 
     private void Rebuild()
     {
+        RebuildData();
+        RebuildFiles();
+    }
+
+    private void RebuildData()
+    {
         var offset = Scroller.VerticalOffset;
-        Sections.Children.Clear();
+        _dataPanel.Children.Clear();
+        _continueRow = null;
 
         if (_data.Continue is { } cont)
         {
-            Sections.Children.Add(SectionHeader(Loc.T("Continue Reading"), Icons.Bookmark));
-            var row = Row(Icons.Archive, cont.Title, null, false, new ProgressMark(cont.Fraction, cont.Finished, true));
-            row.ToolTip = $"{cont.Title} · {Loc.T("%lld%% read", (long)Math.Round(cont.Fraction * 100))}";
-            row.MouseLeftButtonUp += (_, _) => Activate(cont.Request);
-            row.ContextMenu = Menu(MenuItem(Loc.T("Remove from Continue Reading"), () => RemoveContinueRequested?.Invoke(cont.BookKey)));
-            Sections.Children.Add(row);
+            _dataPanel.Children.Add(SectionHeader(Loc.T("Continue Reading"), Icons.Bookmark));
+            _continueRow = ContinueRow(cont);
+            _dataPanel.Children.Add(_continueRow);
         }
 
         if (_data.Volumes.Count > 0)
         {
-            Sections.Children.Add(SectionHeader(Loc.T("Volumes"), Icons.Archive));
+            _dataPanel.Children.Add(SectionHeader(Loc.T("Volumes"), Icons.Archive));
             foreach (var v in _data.Volumes)
             {
                 var row = Row(Icons.Archive, v.Title, null, v.IsActive, null);
                 row.MouseLeftButtonUp += (_, _) => Activate(v.Request);
-                Sections.Children.Add(row);
+                _dataPanel.Children.Add(row);
             }
         }
 
         if (_data.Favorites.Count > 0)
         {
-            Sections.Children.Add(SectionHeader(Loc.T("Favorites"), Icons.Star));
+            _dataPanel.Children.Add(SectionHeader(Loc.T("Favorites"), Icons.Star));
             foreach (var f in _data.Favorites)
             {
                 var row = Row(Icons.Archive, f.Title, null, f.IsActive, null);
                 row.MouseLeftButtonUp += (_, _) => { if (f.Request is { } r) Activate(r); };
                 row.ContextMenu = Menu(MenuItem(Loc.T("Remove from Favorites"), () => RemoveFavoriteRequested?.Invoke(f.Id)));
-                Sections.Children.Add(row);
+                _dataPanel.Children.Add(row);
             }
         }
 
@@ -159,36 +199,40 @@ public partial class LibrarySidebar : UserControl
                 DockPanel.SetDock(trash, Dock.Right);
                 ((DockPanel)header).Children.Insert(0, trash);
             }
-            Sections.Children.Add(header);
+            _dataPanel.Children.Add(header);
             if (_data.CurrentBookmarks.Count == 0)
             {
-                Sections.Children.Add(new TextBlock { Text = Loc.T("No Bookmarks in This Book"), Style = (Style)FindResource("Text.Caption"), Margin = new Thickness(8, 2, 8, 6) });
+                _dataPanel.Children.Add(new TextBlock { Text = Loc.T("No Bookmarks in This Book"), Style = (Style)FindResource("Text.Caption"), Margin = new Thickness(8, 2, 8, 6) });
             }
-            foreach (var b in _data.CurrentBookmarks) Sections.Children.Add(BookmarkRowElement(b, current: true));
+            foreach (var b in _data.CurrentBookmarks) _dataPanel.Children.Add(BookmarkRowElement(b, current: true));
         }
 
         if (_data.OtherBookmarks.Count > 0)
         {
-            Sections.Children.Add(SectionHeader(Loc.T("Bookmarks in Other Books"), Icons.Bookmark));
-            foreach (var b in _data.OtherBookmarks) Sections.Children.Add(BookmarkRowElement(b, current: false));
+            _dataPanel.Children.Add(SectionHeader(Loc.T("Bookmarks in Other Books"), Icons.Bookmark));
+            foreach (var b in _data.OtherBookmarks) _dataPanel.Children.Add(BookmarkRowElement(b, current: false));
         }
+        Scroller.ScrollToVerticalOffset(offset);
+    }
 
-        Sections.Children.Add(SectionHeader(Loc.T("Files"), Icons.Folder));
+    private void RebuildFiles()
+    {
+        var offset = Scroller.VerticalOffset;
+        _filesPanel.Children.Clear();
+        _filesPanel.Children.Add(SectionHeader(Loc.T("Files"), Icons.Folder));
         if (_rootPath is null)
         {
-            Sections.Children.Add(new TextBlock { Text = Loc.T("Select a folder to browse books from."), Style = (Style)FindResource("Text.Caption"), Margin = new Thickness(8, 2, 8, 8) });
+            _filesPanel.Children.Add(new TextBlock { Text = Loc.T("Select a folder to browse books from."), Style = (Style)FindResource("Text.Caption"), Margin = new Thickness(8, 2, 8, 8) });
             var pick = new Button { Content = Loc.T("Pick Folder…"), Style = (Style)FindResource("Panely.Button"), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(8, 0, 0, 0) };
             pick.Click += (_, _) => PickFolderRequested?.Invoke();
-            Sections.Children.Add(pick);
+            _filesPanel.Children.Add(pick);
         }
         else
         {
-            if (_tree.Parent is Panel p) p.Children.Remove(_tree);
-            if (_treeEmpty.Parent is Panel p2) p2.Children.Remove(_treeEmpty);
             _treeEmpty.Style = (Style)FindResource("Text.Caption");
             _treeEmpty.Text = Loc.T("No books to show");
-            Sections.Children.Add(_tree);
-            Sections.Children.Add(_treeEmpty);
+            _filesPanel.Children.Add(_tree);
+            _filesPanel.Children.Add(_treeEmpty);
         }
         Scroller.ScrollToVerticalOffset(offset);
     }
@@ -386,7 +430,7 @@ public partial class LibrarySidebar : UserControl
         _tree.Items.Clear();
         OverflowNotice.Visibility = Visibility.Collapsed;
         UpdateHeader();
-        Rebuild();
+        RebuildFiles();
         if (path is null || _library is null) return;
         await LoadChildren(null, path);
         if (_activePath is not null) await Reveal(_activePath);
@@ -482,10 +526,15 @@ public partial class LibrarySidebar : UserControl
             var node = children[i];
             if (_nodes.TryGetValue(node.Path, out var existing) && ReferenceEquals(existing.Parent, parent ?? (object)_tree))
             {
-                var idx = items.IndexOf(existing);
+                // 대부분 제자리에 있으므로 전체 탐색과 행 재생성을 피한다(진행률은 RefreshAll·활성 행 갱신이 맡는다)
+                var idx = i < items.Count && ReferenceEquals(items[i], existing) ? i : items.IndexOf(existing);
                 if (idx != i && idx >= 0) { items.RemoveAt(idx); items.Insert(Math.Min(i, items.Count), existing); }
-                ((NodeTag)existing.Tag).Node = node;
-                RefreshHeader(existing);
+                var existingTag = (NodeTag)existing.Tag;
+                if (existingTag.Node != node)
+                {
+                    existingTag.Node = node;
+                    RefreshHeader(existing);
+                }
                 continue;
             }
             var item = CreateNode(node);

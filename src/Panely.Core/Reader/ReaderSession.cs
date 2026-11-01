@@ -115,7 +115,8 @@ public sealed class ReaderSession : IDisposable
     /// </summary>
     public async Task<bool> OpenAsync(OpenRequest request)
     {
-        FlushPosition();
+        // 디스크 쓰기(fsync)가 UI 스레드를 막지 않게 worker에서 저장하고, 새 책을 화면에 올리기 전에 끝을 기다린다
+        var flush = FlushPositionInBackground();
         var epoch = Interlocked.Increment(ref _epoch);
         _loadCts?.Cancel();
         _loadCts?.Dispose();
@@ -158,6 +159,7 @@ public sealed class ReaderSession : IDisposable
             return false;
         }
 
+        await flush;
         if (Epoch != epoch || cts.IsCancellationRequested)
         {
             book.Dispose();
@@ -242,7 +244,7 @@ public sealed class ReaderSession : IDisposable
     /// <summary>책 닫기(위치 flush).</summary>
     public void Close()
     {
-        FlushPosition();
+        _ = FlushPositionInBackground();
         CancelLoading();
         var previous = Book;
         if (previous is null) return;
@@ -406,7 +408,8 @@ public sealed class ReaderSession : IDisposable
         var changed = index != PageIndex;
         PageIndex = index;
         if (changed) RecordProgress();
-        var flags = ReaderChange.Page | ReaderChange.Bookmarks;
+        // 쪽 이동은 북마크 목록을 바꾸지 않는다(툴바의 북마크 표시는 Page 변경에서 함께 갱신된다).
+        var flags = ReaderChange.Page;
         if (wasPrepared != _previousPrepared || changed) flags |= ReaderChange.VolumeCards;
         Raise(flags);
     }
@@ -541,11 +544,22 @@ public sealed class ReaderSession : IDisposable
         _state.SetProgress(Book.BookKey, value.Page, value.Total, value.Finished);
     }
 
-    /// <summary>pending 위치를 디스크에 쓴다(책 전환/종료).</summary>
+    /// <summary>pending 위치를 디스크에 쓴다(종료). 호출한 스레드를 막으므로 책 전환에는 쓰지 않는다.</summary>
     public void FlushPosition()
     {
         if (Book is not null && PageCount > 0) _state.SetPosition(Book.BookKey, PageIndex);
         _state.Flush();
+    }
+
+    /// <summary>위치는 바로 기록하고 디스크 쓰기는 worker에서 한다(책 전환·닫기).</summary>
+    private Task FlushPositionInBackground()
+    {
+        if (Book is not null && PageCount > 0) _state.SetPosition(Book.BookKey, PageIndex);
+        return Task.Run(() =>
+        {
+            try { _state.Flush(); }
+            catch (Exception ex) { _diagnostics?.Log(LogLevel.Error, LogCategory.Persistence, $"State save failed: {ex.GetType().Name}"); }
+        });
     }
 
     private void Raise(ReaderChange change) => Changed?.Invoke(this, change);

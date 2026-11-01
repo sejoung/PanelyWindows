@@ -250,13 +250,15 @@ public partial class MainWindow : Window
             UpdateUi(ReaderChange.None);
         }
         if (change.HasFlag(StateChange.Recents) || change.HasFlag(StateChange.Favorites) || change.HasFlag(StateChange.Bookmarks)
-            || change.HasFlag(StateChange.Progress) || change.HasFlag(StateChange.LibraryRoot))
+            || change.HasFlag(StateChange.LibraryRoot))
             RefreshSidebarSoon();
+        else if (change.HasFlag(StateChange.Progress) && !_progressRefreshTimer.IsEnabled)
+            _progressRefreshTimer.Start(); // 쪽을 넘길 때마다 바뀌므로 약 1초로 묶는다
     }
 
+    /// <summary>오버레이 내용이 바뀌는 경로는 번역 기능이 직접 무효화한다. 작업 진행 알림마다 오버레이를 다시 배치하지 않는다.</summary>
     private void OnFeatureStateChanged()
     {
-        Viewer.InvalidateOverlay();
         var translated = _feature.IsEnabled ? _feature.TranslatedPageIndices : new HashSet<int>();
         _thumbnails.SetTranslated(translated);
         UpdateUi(ReaderChange.None);
@@ -504,6 +506,7 @@ public partial class MainWindow : Window
             if (PinnedLibraryHost.Child != _sidebar) PinnedLibraryHost.Child = _sidebar;
             PinnedLibraryHost.Visibility = Visibility.Visible;
             HotEdge.Visibility = Visibility.Collapsed;
+            if (_sidebarDirty) RefreshSidebar();
         }
         else
         {
@@ -546,6 +549,7 @@ public partial class MainWindow : Window
         _libraryOverlayOpen = true;
         LibraryOverlay.Visibility = Visibility.Visible;
         HotEdgeIndicator.Opacity = 0;
+        if (_sidebarDirty) RefreshSidebar();
     }
 
     private void CloseLibraryOverlay()

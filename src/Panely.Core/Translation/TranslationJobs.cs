@@ -121,4 +121,6 @@ public sealed class TranslationOptions
     /// <summary>분석이 끝나 번역을 기다릴 수 있는 쪽(strip은 band) 수. 번역이 밀리면 이만큼 쌓여 묶음이 찬다.</summary>
     public int AnalysisLookahead { get; init; } = 6;
     public int PixelCacheSize { get; init; } = 4;
+    /// <summary>실행할 작업이 이만큼 없으면 번역·탐지·OCR 모델을 메모리에서 내린다.</summary>
+    public TimeSpan IdleModelRelease { get; init; } = TimeSpan.FromMinutes(10);
 }

@@ -38,7 +38,7 @@ public sealed class ThumbItem : INotifyPropertyChanged
     public double Aspect
     {
         get => _aspect;
-        set { var v = Math.Clamp(value, 0.3, 3); if (Math.Abs(v - _aspect) < 0.001) return; _aspect = v; Raise(); Raise(nameof(ImageHeight)); }
+        set { var v = Math.Clamp(value, 0.3, 3); if (Math.Abs(v - _aspect) < 0.001) return; _aspect = v; _owner.InvalidateCellTops(); Raise(); Raise(nameof(ImageHeight)); }
     }
 
     public double ImageHeight => 112 * _aspect;
@@ -79,17 +79,24 @@ public sealed class ThumbItem : INotifyPropertyChanged
 /// 오른쪽 미리보기 목록(02): 폭 148, 이미지 폭 112, 셀 간격·padding 8, radius 4, 활성 테두리 accent 2.
 /// 가상화(천 쪽도 보이는 셀만 생성), 활성 셀을 가운데로 자동 스크롤, 번역 완료 원형 배지.
 /// </summary>
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1001:Types that own disposable fields should be disposable", Justification = "주 창과 수명이 같은 컨트롤. SemaphoreSlim은 WaitAsync만 쓰므로 해제할 대기 핸들이 없다.")]
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1001:Types that own disposable fields should be disposable", Justification = "주 창과 수명이 같은 컨트롤. CancellationTokenSource는 책이 바뀔 때 교체하며 타이머를 쓰지 않는다.")]
 public partial class ThumbnailPanel : UserControl
 {
     private const int MaxCached = 300;
-    private readonly ObservableCollection<ThumbItem> _items = new();
-    private readonly SemaphoreSlim _gate = new(2);
+    private const int MaxConcurrentLoads = 2;
+    /// <summary>대기 요청 상한. 넘치면 가장 오래된 요청(이미 스크롤로 지나간 셀)을 버린다. 다시 보이면 다시 요청된다.</summary>
+    private const int MaxPendingLoads = 64;
+    private ObservableCollection<ThumbItem> _items = new();
+    private readonly List<ThumbItem> _pending = new();
     private readonly LinkedList<ThumbItem> _lru = new();
     private OpenedBook? _book;
     private IPageDecoder? _decoder;
     private CancellationTokenSource _cts = new();
+    private ScrollViewer? _scrollViewer;
+    private double[]? _cellTops;
+    private int _runningLoads;
     private int _active = -1;
+    private Panely.Domain.Model.PageRange _activeRange;
 
     public ThumbnailPanel()
     {
@@ -108,17 +115,24 @@ public partial class ThumbnailPanel : UserControl
         _cts.Cancel();
         _cts = new CancellationTokenSource();
         _book = book;
-        _items.Clear();
+        _pending.Clear();
         _lru.Clear();
         _active = -1;
-        if (book is null) return;
-        for (var i = 0; i < book.Pages.Count; i++)
+        _activeRange = default;
+        _cellTops = null;
+        // 항목마다 변경 알림을 보내지 않도록 목록을 만든 뒤 한 번에 바꾼다
+        var items = new List<ThumbItem>(book?.Pages.Count ?? 0);
+        for (var i = 0; i < (book?.Pages.Count ?? 0); i++)
         {
             var item = new ThumbItem(this, i);
             if (sizeOf(i) is { Width: > 0 } s) item.Aspect = s.Height / s.Width;
-            _items.Add(item);
+            items.Add(item);
         }
+        _items = new ObservableCollection<ThumbItem>(items);
+        List.ItemsSource = _items;
     }
+
+    internal void InvalidateCellTops() => _cellTops = null;
 
     public void UpdateSizes(IEnumerable<int> indices, Func<int, SizeD?> sizeOf)
     {
@@ -128,7 +142,12 @@ public partial class ThumbnailPanel : UserControl
 
     public void SetActive(Panely.Domain.Model.PageRange range, bool scroll)
     {
-        for (var i = 0; i < _items.Count; i++) _items[i].IsActive = range.Contains(i);
+        if (range == _activeRange && _active == range.Start) return; // 한 번 넘길 때 두 경로에서 같은 범위가 온다
+        foreach (var i in _activeRange.Indices())
+            if (i < _items.Count && !range.Contains(i)) _items[i].IsActive = false;
+        foreach (var i in range.Indices())
+            if (i < _items.Count) _items[i].IsActive = true;
+        _activeRange = range;
         if (range.IsEmpty || range.Start >= _items.Count) return;
         if (_active == range.Start && !scroll) return;
         _active = range.Start;
@@ -150,12 +169,22 @@ public partial class ThumbnailPanel : UserControl
     private void CenterOn(int index)
     {
         if (index < 0 || index >= _items.Count) return;
-        var sv = FindScrollViewer(List);
+        var sv = _scrollViewer ??= FindScrollViewer(List);
         if (sv is null) { List.ScrollIntoView(_items[index]); return; }
-        // 가변 높이: 앞 셀 높이 합으로 위치 계산(가상화와 무관하게 정확)
-        double y = 8;
-        for (var i = 0; i < index; i++) y += _items[i].ImageHeight + 4 + 16 + 8;
-        var target = y + (_items[index].ImageHeight + 20) / 2 - sv.ViewportHeight / 2;
+        // 가변 높이: 앞 셀 높이 합으로 위치 계산(가상화와 무관하게 정확). 비율이 바뀔 때만 다시 합산한다.
+        var tops = _cellTops;
+        if (tops is null || tops.Length != _items.Count)
+        {
+            tops = new double[_items.Count];
+            double y = 8;
+            for (var i = 0; i < tops.Length; i++)
+            {
+                tops[i] = y;
+                y += _items[i].ImageHeight + 4 + 16 + 8;
+            }
+            _cellTops = tops;
+        }
+        var target = tops[index] + (_items[index].ImageHeight + 20) / 2 - sv.ViewportHeight / 2;
         sv.ScrollToVerticalOffset(Math.Max(0, target));
     }
 
@@ -170,20 +199,36 @@ public partial class ThumbnailPanel : UserControl
         return null;
     }
 
+    /// <summary>요청을 대기열에 넣는다. 최근 요청(지금 보이는 셀)부터 처리한다. UI 스레드에서 호출한다.</summary>
     internal void RequestThumbnail(ThumbItem item)
     {
         var book = _book;
+        if (book is null || _decoder is null || item.Index >= book.Pages.Count) return;
+        _pending.Add(item);
+        if (_pending.Count > MaxPendingLoads)
+        {
+            _pending[0].ResetRequest();
+            _pending.RemoveAt(0);
+        }
+        PumpThumbnails();
+    }
+
+    private void PumpThumbnails()
+    {
+        var book = _book;
         var decoder = _decoder;
-        if (book is null || decoder is null || item.Index >= book.Pages.Count) return;
-        var token = _cts.Token;
-        var page = book.Pages[item.Index];
+        if (book is null || decoder is null) return;
         var scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
         var width = (int)Math.Ceiling(112 * Math.Max(1, scale));
-        _ = Task.Run(async () =>
+        var token = _cts.Token;
+        while (_runningLoads < MaxConcurrentLoads && _pending.Count > 0)
         {
-            try
+            var item = _pending[^1];
+            _pending.RemoveAt(_pending.Count - 1);
+            var page = book.Pages[item.Index];
+            _runningLoads++;
+            _ = Task.Run(async () =>
             {
-                await _gate.WaitAsync(token).ConfigureAwait(false);
                 try
                 {
                     token.ThrowIfCancellationRequested();
@@ -198,16 +243,20 @@ public partial class ThumbnailPanel : UserControl
                         Track(item);
                     });
                 }
+                catch (Exception)
+                {
+                    // 썸네일 실패는 빈 셀로 둔다
+                }
                 finally
                 {
-                    _gate.Release();
+                    _ = Dispatcher.BeginInvoke(() =>
+                    {
+                        _runningLoads--;
+                        PumpThumbnails();
+                    });
                 }
-            }
-            catch (Exception)
-            {
-                // 썸네일 실패는 빈 셀로 둔다
-            }
-        }, token);
+            }, CancellationToken.None);
+        }
     }
 
     private void Track(ThumbItem item)

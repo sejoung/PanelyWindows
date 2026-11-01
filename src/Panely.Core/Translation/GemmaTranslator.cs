@@ -13,9 +13,10 @@ namespace Panely.Core.Translation;
 /// <summary>
 /// Gemma 4 E2B(GGUF) 번역기. LLamaSharp(llama.cpp)로 앱 프로세스 안에서 돌린다(ADR 0008).
 /// GPU는 Vulkan, 드라이버가 없거나 PANELY_ORT_DEVICE=cpu면 CPU. 말풍선 묶음을 앞 문맥과 함께 한 번에 번역하고,
-/// 원문의 말투(존댓말·반말)와 이름을 이어 가도록 지시한다. 모델은 첫 번역 때 올리고 컨텍스트 하나를 계속 쓴다.
+/// 원문의 말투(존댓말·반말)와 이름을 이어 가도록 지시한다. 모델은 첫 번역 때 올리고 컨텍스트 하나를 재사용하며,
+/// 오래 쓰지 않으면 내렸다가 다음 번역 때 다시 올린다(ADR 0009).
 /// </summary>
-public sealed partial class GemmaTranslator : ITranslator, IDisposable
+public sealed partial class GemmaTranslator : ITranslator, IIdleReleasable, IDisposable
 {
     /// <summary>프롬프트·후처리를 바꾸면 올린다(캐시 identity에 들어간다).</summary>
     private const int PromptVersion = 1;
@@ -226,6 +227,20 @@ public sealed partial class GemmaTranslator : ITranslator, IDisposable
 
     [GeneratedRegex("ー{2,}")]
     private static partial Regex LongDash();
+
+    public async Task ReleaseIdleAsync(CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            _runtime?.Dispose();
+            _runtime = null;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
 
     public void Dispose()
     {

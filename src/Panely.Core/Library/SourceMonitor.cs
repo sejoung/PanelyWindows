@@ -19,6 +19,7 @@ public sealed class SourceMonitor : ISourceMonitor
     private bool _isFolder;
     private string? _baseline;
     private bool _disposed;
+    private long _watchRequest;
 
     public SourceMonitor() : this(DefaultDebounce) { }
 
@@ -32,13 +33,29 @@ public sealed class SourceMonitor : ISourceMonitor
 
     public event EventHandler? SourceChanged;
 
-    public void Watch(OpenedBook? book) => Watch(book?.WatchPath);
+    /// <summary>
+    /// 책 감시 시작. 폴더 책은 기준값을 만들려고 파일을 모두 열거하므로(NAS에서 느림) UI 스레드를 막지 않게 worker에서 한다.
+    /// 그 사이 다른 책으로 바뀌면 이 요청은 건너뛴다.
+    /// </summary>
+    public void Watch(OpenedBook? book)
+    {
+        var path = book?.WatchPath;
+        var request = Interlocked.Increment(ref _watchRequest);
+        _ = Task.Run(() =>
+        {
+            try { WatchCore(path, request); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ObjectDisposedException) { }
+        });
+    }
 
-    /// <summary>경로를 직접 감시(테스트·내부용).</summary>
-    public void Watch(string? path)
+    /// <summary>경로를 직접 감시(테스트·내부용). 호출한 스레드에서 끝낸다.</summary>
+    public void Watch(string? path) => WatchCore(path, Interlocked.Increment(ref _watchRequest));
+
+    private void WatchCore(string? path, long request)
     {
         lock (_gate)
         {
+            if (request != Interlocked.Read(ref _watchRequest)) return;
             _watcher?.Dispose();
             _watcher = null;
             _timer.Change(Timeout.Infinite, Timeout.Infinite);

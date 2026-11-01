@@ -268,6 +268,13 @@ public sealed class FloatingToolbar : Border
     {
         var layoutChanged = _state.Layout != state.Layout || _state.TranslationEnabled != state.TranslationEnabled
                             || _state.TranslationLabel != state.TranslationLabel;
+        // 줌·스크롤마다 호출되므로 툴팁 문구가 달라질 때만 다시 만든다
+        var tooltipsChanged = _state.HasBook != state.HasBook || _state.LibraryPinned != state.LibraryPinned
+                              || _state.ToolbarPinned != state.ToolbarPinned || _state.Layout != state.Layout
+                              || _state.Direction != state.Direction || _state.SizeLocked != state.SizeLocked
+                              || _state.IsFavorite != state.IsFavorite || _state.IsBookmarked != state.IsBookmarked
+                              || _state.ThumbnailsVisible != state.ThumbnailsVisible || _state.TranslationActive != state.TranslationActive
+                              || _state.HasPreviousVolume != state.HasPreviousVolume || _state.HasNextVolume != state.HasNextVolume;
         _state = state;
         _libPin.IsChecked = state.LibraryPinned;
         ((IconGlyph)_libPin.Content).Filled = state.LibraryPinned;
@@ -302,17 +309,25 @@ public sealed class FloatingToolbar : Border
         _nextPage.IsEnabled = state.CanNextPage;
         _prevVol.IsEnabled = state.HasBook && state.HasPreviousVolume;
         _nextVol.IsEnabled = state.HasBook && state.HasNextVolume;
-        UpdateTooltips();
+        if (tooltipsChanged) UpdateTooltips();
         Arrange(force: layoutChanged);
     }
+
+    private string? _measuredLabel;
+    private double _measuredLabelWidth;
 
     /// <summary>이름이 가장 긴 번역 언어명까지 고려해 실측.</summary>
     private double TranslationWidth()
     {
         if (!_state.TranslationEnabled) return 0;
-        var ft = new FormattedText(_state.TranslationLabel, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-            new Typeface("Segoe UI"), 12, Brushes.White, VisualTreeHelper.GetDpi(this).PixelsPerDip);
-        return ButtonSize + Gap + ft.WidthIncludingTrailingWhitespace + 8 + 10 + 4 + Gap;
+        if (_measuredLabel != _state.TranslationLabel)
+        {
+            var ft = new FormattedText(_state.TranslationLabel, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+                new Typeface("Segoe UI"), 12, Brushes.White, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+            _measuredLabel = _state.TranslationLabel;
+            _measuredLabelWidth = ft.WidthIncludingTrailingWhitespace;
+        }
+        return ButtonSize + Gap + _measuredLabelWidth + 8 + 10 + 4 + Gap;
     }
 
     private static double W(int buttons) => buttons * (ButtonSize + Gap);

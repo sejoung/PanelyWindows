@@ -34,6 +34,7 @@ public sealed class TranslationScheduler : IAsyncDisposable
     private string? _currentTarget;
     private int _currentPage;
     private Job? _active;
+    private long _lastModelUse = Environment.TickCount64;
 
     public TranslationScheduler(TranslationProviders providers, TranslationCache cache, IPagePixelSource pixels, IBookAccess books,
         TranslationOptions? options = null, IDiagnostics? diagnostics = null)
@@ -126,8 +127,10 @@ public sealed class TranslationScheduler : IAsyncDisposable
     public HashSet<int> CachedPages(IReadOnlyList<PageEntry> pages, string source, string target, TranslationScope scope)
     {
         var set = new HashSet<int>();
+        // revision은 모델 설치 상태를 파일로 확인하므로 쪽마다 계산하지 않는다
+        var revision = ProviderRevision;
         for (var i = 0; i < pages.Count; i++)
-            if (_cache.Contains(CacheKey(pages[i].PageId, source, target, scope))) set.Add(i);
+            if (_cache.Contains(new TranslationCacheKey(pages[i].PageId, source, target, scope, PageAnalyzer.AnalysisVersion, revision))) set.Add(i);
         return set;
     }
 
@@ -291,6 +294,7 @@ public sealed class TranslationScheduler : IAsyncDisposable
     {
         var cap = _providers.Translator.GetCapability(source, target);
         if (!cap.IsReady) throw new InvalidOperationException(cap.Reason);
+        Interlocked.Exchange(ref _lastModelUse, Environment.TickCount64);
         var results = await _providers.Translator.TranslateAsync(items, [], source, target, cancellationToken).ConfigureAwait(false);
         var map = new Dictionary<string, string>();
         var sourceById = items.ToDictionary(i => i.Id, i => i.Text);
@@ -328,7 +332,21 @@ public sealed class TranslationScheduler : IAsyncDisposable
             }
             if (job is null)
             {
-                try { await _signal.WaitAsync(token).ConfigureAwait(false); } catch (OperationCanceledException) { break; }
+                try
+                {
+                    // _signal은 쪽을 넘길 때도 오므로(SetCurrent) 대기 시간이 아니라 마지막 모델 사용 시각으로 유휴를 잰다
+                    var remaining = _options.IdleModelRelease - TimeSpan.FromMilliseconds(Environment.TickCount64 - Interlocked.Read(ref _lastModelUse));
+                    if (remaining <= TimeSpan.Zero)
+                    {
+                        Interlocked.Exchange(ref _lastModelUse, Environment.TickCount64);
+                        await ReleaseIdleModelsAsync(token).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await _signal.WaitAsync(remaining, token).ConfigureAwait(false);
+                    }
+                }
+                catch (OperationCanceledException) { break; }
                 continue;
             }
 
@@ -349,6 +367,7 @@ public sealed class TranslationScheduler : IAsyncDisposable
             }
             finally
             {
+                Interlocked.Exchange(ref _lastModelUse, Environment.TickCount64);
                 lock (_gate)
                 {
                     if (_active == job) _active = null;
@@ -357,6 +376,23 @@ public sealed class TranslationScheduler : IAsyncDisposable
                         ReleaseHandle(job);
                 }
                 cts.Dispose();
+            }
+        }
+    }
+
+    /// <summary>번역이 끝나고 한동안 쓰지 않으면 모델을 내려 읽는 동안 RAM·VRAM을 차지하지 않게 한다. 다음 번역 때 다시 올린다.</summary>
+    private async Task ReleaseIdleModelsAsync(CancellationToken ct)
+    {
+        foreach (var provider in new object[] { _providers.Translator, _providers.Detector, _providers.Recognizer })
+        {
+            if (provider is not IIdleReleasable releasable) continue;
+            try
+            {
+                await releasable.ReleaseIdleAsync(ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _diagnostics?.Log(LogLevel.Warning, LogCategory.Translation, $"Model release failed: {ex.GetType().Name}");
             }
         }
     }

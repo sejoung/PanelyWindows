@@ -65,8 +65,19 @@ public partial class App : Application
         _diagnostics.Info(LogCategory.App, $"Launch {AppInfo.Version} ({AppInfo.Build}) on {AppInfo.OsVersion}");
         Loc.SetLanguage(Loc.Resolve(_state.Settings.AppLanguage));
 
-        var cache = new ExtractionCache(appPaths, _diagnostics);
-        try { cache.CleanupOrphans(); }
+        // 책을 닫는 UI 스레드에서 캐시 정리가 돌지 않게 하고, 시작 정리는 창을 막지 않게 백그라운드로 보낸다.
+        // 남은 staging은 먼저 치워 두므로 곧바로 시작되는 새 해제와 섞이지 않는다.
+        var cache = new ExtractionCache(appPaths, _diagnostics) { EnforceInBackground = true };
+        var diagnostics = _diagnostics;
+        try
+        {
+            cache.DetachStaleStaging();
+            _ = Task.Run(() =>
+            {
+                try { cache.FinishOrphanCleanup(); }
+                catch (Exception ex) { diagnostics.Warning(LogCategory.Cache, $"Orphan cleanup failed: {ex.GetType().Name}"); }
+            });
+        }
         catch (Exception ex) { _diagnostics.Warning(LogCategory.Cache, $"Orphan cleanup failed: {ex.GetType().Name}"); }
 
         var opener = new BookOpener(_state, cache, _diagnostics);

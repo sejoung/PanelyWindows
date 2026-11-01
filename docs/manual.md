@@ -463,6 +463,7 @@ Click the toolbar's **Choose Language** button (a language name with ▾) and ch
 - One job runs at a time. Jobs for other books wait their turn.
 - Finished pages get a check badge in the thumbnails.
 - When translation starts, the translation model gets ready while balloons are being found. On a GPU the first preparation takes about 20 seconds, but it overlaps balloon detection, so the first translation usually appears in about 10 seconds.
+- If nothing is translated for 10 minutes, Panely unloads the models to free memory and prepares them again the next time you translate.
 
 ### On a PC without a GPU
 

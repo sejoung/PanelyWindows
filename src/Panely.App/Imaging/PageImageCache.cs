@@ -13,14 +13,17 @@ namespace Panely.App.Imaging;
 /// - 헤더로 치수만 먼저(아카이브 64KiB prefix, 실패 시 전체).
 /// - 우선순위 대기열 순서로 decode, 동시성 max(2,min(8,CPU)). 새 요청은 아직 시작 안 한 대기열을 통째로 바꾸고,
 ///   이미 decode 중인 쪽은 끝까지 진행한다(빠르게 넘겨도 다시 필요해진 쪽이 대기열에서 빠지지 않는다).
-/// - 메모리 예산 RAM/16 (150MiB..1GiB), 최대 100장, 비용 w×h×4. keep 범위 밖부터 LRU 제거.
-/// - 결과는 UI 스레드에 배치 게시(이미지는 Normal, 치수만은 Background). 실패한 쪽은 keep 범위 밖으로 나가면 실패 상태 해제.
+/// - 메모리 예산 RAM/16 (150MiB..1GiB), 최대 100장, 비용 w×h×4. keep 범위 밖 LRU → keep 안에서 먼 쪽 순으로 제거.
+///   가장 최근 요청의 쪽(보이는 쪽과 인접 프리로드)은 제거하지 않아, 이 쪽들만으로 예산을 넘으면 잠깐 초과할 수 있다.
+/// - 결과는 UI 스레드에 배치 게시(이미지는 Normal, 치수만은 짧게 모아 Background). 실패한 쪽은 keep 범위 밖으로 나가면 실패 상태 해제.
 /// 모든 public 멤버는 UI 스레드에서 호출한다.
 /// </summary>
 public sealed class PageImageCache : IDisposable
 {
     public const int PrefixBytes = 64 * 1024;
     public const int MaxImages = 100;
+    /// <summary>치수만 알린 결과를 모으는 시간. 세로 모드는 게시마다 전체 배치를 다시 계산한다.</summary>
+    private static readonly TimeSpan SizeFlushDelay = TimeSpan.FromMilliseconds(80);
 
     private sealed class Slot
     {
@@ -54,6 +57,8 @@ public sealed class PageImageCache : IDisposable
     private bool _flushScheduled;
     private bool _urgentFlushScheduled;
     private PageRange _keep;
+    private HashSet<int> _protected = new();
+    private int _focus;
 
     public PageImageCache(Dispatcher dispatcher, IPageDecoder decoder, IDiagnostics? diagnostics)
     {
@@ -102,6 +107,8 @@ public sealed class PageImageCache : IDisposable
         while (_results.TryDequeue(out _)) { }
         _totalCost = 0;
         _keep = default;
+        _protected = new HashSet<int>();
+        _focus = 0;
         _book = book;
     }
 
@@ -139,6 +146,8 @@ public sealed class PageImageCache : IDisposable
         var book = _book;
         if (book is null) return;
         _keep = keep;
+        _protected = new HashSet<int>(priority);
+        if (priority.Count > 0) _focus = priority[0];
 
         foreach (var (index, slot) in _slots)
             if (slot.Failed && !keep.Contains(index)) slot.Failed = false;
@@ -257,7 +266,14 @@ public sealed class PageImageCache : IDisposable
             _flushScheduled = true;
             if (urgent) _urgentFlushScheduled = true;
         }
-        _dispatcher.BeginInvoke(urgent ? DispatcherPriority.Normal : DispatcherPriority.Background, Flush);
+        if (urgent) _dispatcher.BeginInvoke(DispatcherPriority.Normal, Flush);
+        else _ = FlushSizesLaterAsync();
+    }
+
+    private async Task FlushSizesLaterAsync()
+    {
+        await Task.Delay(SizeFlushDelay).ConfigureAwait(false);
+        _ = _dispatcher.BeginInvoke(DispatcherPriority.Background, Flush);
     }
 
     private void Flush()
@@ -307,14 +323,16 @@ public sealed class PageImageCache : IDisposable
         if (changed.Count > 0) ImagesChanged?.Invoke(changed);
     }
 
-    /// <summary>예산 초과 시 keep 범위 밖, 오래 안 쓴 것부터 제거.</summary>
+    /// <summary>예산 초과 시 keep 범위 밖의 오래 안 쓴 것, 그래도 넘으면 keep 안에서 먼 것부터 제거. 최근 요청한 쪽은 남긴다.</summary>
     private void Evict()
     {
         var count = _slots.Values.Count(s => s.Image is not null);
         if (_totalCost <= _budgetBytes && count <= MaxImages) return;
-        var candidates = _slots.Where(kv => kv.Value.Image is not null && !_keep.Contains(kv.Key))
-            .OrderBy(kv => kv.Value.LastUse).ToList();
-        // keep 안이라도 예산을 크게 넘으면 먼 것부터 버린다
+        var candidates = _slots.Where(kv => kv.Value.Image is not null && !_protected.Contains(kv.Key))
+            .OrderBy(kv => _keep.Contains(kv.Key) ? 1 : 0)
+            .ThenBy(kv => _keep.Contains(kv.Key) ? -Math.Abs(kv.Key - _focus) : 0)
+            .ThenBy(kv => kv.Value.LastUse)
+            .ToList();
         foreach (var (_, slot) in candidates)
         {
             if (_totalCost <= _budgetBytes && count <= MaxImages) break;

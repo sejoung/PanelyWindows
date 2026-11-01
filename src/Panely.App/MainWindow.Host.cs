@@ -34,6 +34,8 @@ public partial class MainWindow : IReaderHost
 
     void IReaderHost.InvalidateOverlay() => Viewer.InvalidateOverlay();
 
+    void IReaderHost.InvalidatePageOverlay(int pageIndex) => Viewer.InvalidatePageOverlay(pageIndex);
+
     void IReaderHost.ShowNotice(string message, TimeSpan? duration)
         => _session.Notices.Post(new Notice(NoticeCategory.Translation, message, duration is null ? [NoticeAction.Dismiss] : [], duration));
 

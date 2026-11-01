@@ -51,19 +51,25 @@ public sealed class MangaOcrEngine : IDisposable
     {
         var n = crops.Length;
         var pixels = new DenseTensor<float>([n, 3, InputSize, InputSize]);
+        // 인덱서는 접근마다 int[]를 할당하므로 버퍼에 바로 쓴다
+        var pixelData = pixels.Buffer.Span;
+        const int Plane = InputSize * InputSize;
         for (var b = 0; b < n; b++)
         {
             var resized = crops[b].Resize(InputSize, InputSize);
+            var bgra = resized.Bgra;
+            var batch = b * 3 * Plane;
             for (var y = 0; y < InputSize; y++)
                 for (var x = 0; x < InputSize; x++)
                 {
                     var i = y * resized.Stride + x * 4;
                     // 회색조(학습 전처리와 같게) 후 세 채널에 복사
-                    var gray = (0.299f * resized.Bgra[i + 2] + 0.587f * resized.Bgra[i + 1] + 0.114f * resized.Bgra[i]) / 255f;
+                    var gray = (0.299f * bgra[i + 2] + 0.587f * bgra[i + 1] + 0.114f * bgra[i]) / 255f;
                     var v = (gray - 0.5f) / 0.5f;
-                    pixels[b, 0, y, x] = v;
-                    pixels[b, 1, y, x] = v;
-                    pixels[b, 2, y, x] = v;
+                    var o = batch + y * InputSize + x;
+                    pixelData[o] = v;
+                    pixelData[Plane + o] = v;
+                    pixelData[2 * Plane + o] = v;
                 }
         }
 
@@ -88,15 +94,18 @@ public sealed class MangaOcrEngine : IDisposable
                 NamedOnnxValue.CreateFromTensor(hiddenInput, hidden),
             ]);
             var logits = outputs.First().AsTensor<float>();
+            var seq = logits.Dimensions[1];
             var vocab = logits.Dimensions[2];
+            var logitData = (logits as DenseTensor<float> ?? logits.ToDenseTensor()).Buffer.Span;
             for (var b = 0; b < n; b++)
             {
                 if (finished[b]) { tokens[b].Add(MangaOcrText.EndToken); continue; }
                 var best = 0;
                 var bestValue = float.MinValue;
+                var last = logitData.Slice((b * seq + length - 1) * vocab, vocab);
                 for (var v = 0; v < vocab; v++)
                 {
-                    var value = logits[b, length - 1, v];
+                    var value = last[v];
                     if (value > bestValue) { bestValue = value; best = v; }
                 }
                 tokens[b].Add(best);
@@ -135,6 +144,20 @@ public sealed class MangaOcrEngine : IDisposable
     {
         _encoder?.Dispose(); _encoder = null;
         _decoder?.Dispose(); _decoder = null;
+    }
+
+    public async Task ReleaseIdleAsync(CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            DisposeSessions();
+            _revision = null;
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     public void Dispose() => DisposeSessions();
@@ -249,14 +272,18 @@ public sealed class PpOcrEngine : IDisposable
         var (iw, ih) = DbPostProcess.InputSize(crop.Width, crop.Height, limitSideLength);
         var resized = crop.Resize(iw, ih);
         var input = new DenseTensor<float>([1, 3, ih, iw]);
+        var inputData = input.Buffer.Span;
+        var bgra = resized.Bgra;
+        var plane = iw * ih;
         for (var y = 0; y < ih; y++)
             for (var x = 0; x < iw; x++)
             {
                 var i = y * resized.Stride + x * 4;
+                var o = y * iw + x;
                 // PaddleOCR은 BGR 순서, mean .5 std .5
-                input[0, 0, y, x] = (resized.Bgra[i] / 255f - 0.5f) / 0.5f;
-                input[0, 1, y, x] = (resized.Bgra[i + 1] / 255f - 0.5f) / 0.5f;
-                input[0, 2, y, x] = (resized.Bgra[i + 2] / 255f - 0.5f) / 0.5f;
+                inputData[o] = (bgra[i] / 255f - 0.5f) / 0.5f;
+                inputData[plane + o] = (bgra[i + 1] / 255f - 0.5f) / 0.5f;
+                inputData[2 * plane + o] = (bgra[i + 2] / 255f - 0.5f) / 0.5f;
             }
         using var outputs = _detector!.Run([NamedOnnxValue.CreateFromTensor(_detector.InputMetadata.Keys.First(), input)]);
         var map = outputs.First().AsTensor<float>();
@@ -290,18 +317,23 @@ public sealed class PpOcrEngine : IDisposable
             var width = bucket.Key;
             var items = bucket.ToList();
             var input = new DenseTensor<float>([items.Count, 3, RecHeight, width]);
+            var inputData = input.Buffer.Span;
+            var plane = RecHeight * width;
             for (var b = 0; b < items.Count; b++)
             {
                 var line = items[b].Line;
                 var resizedWidth = Math.Min(width, (int)Math.Ceiling(RecHeight * line.Width / (double)Math.Max(1, line.Height)));
                 var resized = line.Resize(Math.Max(1, resizedWidth), RecHeight);
+                var bgra = resized.Bgra;
+                var batch = b * 3 * plane;
                 for (var y = 0; y < RecHeight; y++)
                     for (var x = 0; x < resized.Width; x++)
                     {
                         var i = y * resized.Stride + x * 4;
-                        input[b, 0, y, x] = (resized.Bgra[i] / 255f - 0.5f) / 0.5f;
-                        input[b, 1, y, x] = (resized.Bgra[i + 1] / 255f - 0.5f) / 0.5f;
-                        input[b, 2, y, x] = (resized.Bgra[i + 2] / 255f - 0.5f) / 0.5f;
+                        var o = batch + y * width + x;
+                        inputData[o] = (bgra[i] / 255f - 0.5f) / 0.5f;
+                        inputData[plane + o] = (bgra[i + 1] / 255f - 0.5f) / 0.5f;
+                        inputData[2 * plane + o] = (bgra[i + 2] / 255f - 0.5f) / 0.5f;
                     }
             }
             using var outputs = session.Run([NamedOnnxValue.CreateFromTensor(session.InputMetadata.Keys.First(), input)]);
@@ -312,11 +344,20 @@ public sealed class PpOcrEngine : IDisposable
             var steps = transposed ? d2 : d1;
             var classes = transposed ? d1 : d2;
             var row = new float[steps * classes];
+            var logitData = (logits as DenseTensor<float> ?? logits.ToDenseTensor()).Buffer.Span;
             for (var b = 0; b < items.Count; b++)
             {
-                for (var t = 0; t < steps; t++)
-                    for (var c = 0; c < classes; c++)
-                        row[t * classes + c] = transposed ? logits[b, c, t] : logits[b, t, c];
+                var sample = logitData.Slice(b * d1 * d2, d1 * d2);
+                if (transposed)
+                {
+                    for (var t = 0; t < steps; t++)
+                        for (var c = 0; c < classes; c++)
+                            row[t * classes + c] = sample[c * steps + t];
+                }
+                else
+                {
+                    sample.CopyTo(row);
+                }
                 results[items[b].Index] = CtcDecoder.Decode(row, steps, classes, dict);
             }
         }
@@ -377,6 +418,20 @@ public sealed class PpOcrEngine : IDisposable
         _detector?.Dispose(); _detector = null;
         foreach (var (s, _) in _recognizers.Values) s.Dispose();
         _recognizers.Clear();
+    }
+
+    public async Task ReleaseIdleAsync(CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            DisposeSessions();
+            _revision = null;
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     public void Dispose() => DisposeSessions();

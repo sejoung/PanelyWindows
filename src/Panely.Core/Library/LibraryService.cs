@@ -1,3 +1,4 @@
+using System.IO.Enumeration;
 using Panely.Core.Abstractions;
 using Panely.Core.Sources;
 using Panely.Domain.Model;
@@ -192,29 +193,49 @@ public sealed class LibraryService : ILibraryService
         IEnumerable<FileSystemInfo> infos;
         try { infos = dir.EnumerateFileSystemInfos().ToList(); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return result; }
+        var folders = new List<DirectoryInfo>();
         foreach (var info in infos)
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (FolderAnalyzer.IsHidden(info)) continue;
             if (info is DirectoryInfo d)
-                result.Add(new LibraryNode(d.Name, d.FullName, LibraryNodeKind.Folder, string.Empty, HasNavigableChildren(d)));
+                folders.Add(d);
             else if (SupportedFormats.IsArchive(info.Name))
                 result.Add(new LibraryNode(Path.GetFileNameWithoutExtension(info.Name), info.FullName, LibraryNodeKind.Archive, SupportedFormats.ExtensionOf(info.Name), false));
         }
+        // 하위 폴더 확인은 폴더마다 디렉터리를 읽는다(NAS에서는 왕복이 쌓인다). 결과는 아래에서 정렬한다.
+        var mayHaveChildren = new bool[folders.Count];
+        Parallel.For(0, folders.Count, new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = cancellationToken },
+            i => mayHaveChildren[i] = HasNavigableChildren(folders[i].FullName));
+        for (var i = 0; i < folders.Count; i++)
+            result.Add(new LibraryNode(folders[i].Name, folders[i].FullName, LibraryNodeKind.Folder, string.Empty, mayHaveChildren[i]));
         var cmp = FolderAnalyzer.Comparer;
         result.Sort((a, b) => cmp.Compare(Path.GetFileName(a.Path), Path.GetFileName(b.Path)));
         return result;
     }
 
-    private static bool HasNavigableChildren(DirectoryInfo d)
+    private static readonly EnumerationOptions ChildProbeOptions = new()
+    {
+        AttributesToSkip = FileAttributes.Hidden | FileAttributes.System,
+        IgnoreInaccessible = false,
+        // 큰 버퍼로 네트워크 왕복을 줄인다
+        BufferSize = 64 * 1024,
+    };
+
+    /// <summary>폴더·아카이브가 하나라도 있는지. 이미지뿐인 폴더는 끝까지 읽으므로 항목마다 FileInfo를 만들지 않는다.</summary>
+    private static bool HasNavigableChildren(string directory)
     {
         try
         {
-            foreach (var info in d.EnumerateFileSystemInfos())
+            var entries = new FileSystemEnumerable<bool>(directory, (ref FileSystemEntry _) => true, ChildProbeOptions)
             {
-                if (FolderAnalyzer.IsHidden(info)) continue;
-                if (info is DirectoryInfo || SupportedFormats.IsArchive(info.Name)) return true;
-            }
+                ShouldIncludePredicate = (ref FileSystemEntry e) =>
+                {
+                    if (e.FileName.StartsWith(".") || e.FileName.Equals("__MACOSX", StringComparison.OrdinalIgnoreCase)) return false;
+                    return e.IsDirectory || SupportedFormats.IsArchive(e.FileName.ToString());
+                },
+            };
+            return entries.Any();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
         return false;

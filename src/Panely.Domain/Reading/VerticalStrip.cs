@@ -27,6 +27,19 @@ public static class VerticalStrip
         return PageAt(Tops(heights), (viewportTop + viewportBottom) / 2);
     }
 
+    /// <summary>이미 계산한 tops를 재사용한다(스크롤 이벤트마다 호출되므로 O(log n), 할당 없음).</summary>
+    public static int CurrentPage(double[] heights, double[] tops, double viewportTop, double viewportBottom)
+    {
+        var n = heights.Length;
+        if (n == 0) return 0;
+        var total = tops[n - 1] + heights[n - 1];
+        var atTop = viewportTop <= EdgeEpsilon;
+        var atBottom = viewportBottom >= total - EdgeEpsilon;
+        if (atTop && !atBottom) return 0;
+        if (atBottom && !atTop) return n - 1;
+        return PageAt(tops, (viewportTop + viewportBottom) / 2);
+    }
+
     /// <summary>pageTops 이진 탐색: tops[i] &lt;= y 인 마지막 i.</summary>
     public static int PageAt(IReadOnlyList<double> tops, double y)
     {

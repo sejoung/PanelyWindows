@@ -111,7 +111,8 @@ internal static class StateJson
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
             DictionaryKeyPolicy = null,
-            WriteIndented = true,
+            // 책을 읽는 동안 자주 저장하고 저장 중에는 상태 잠금을 잡으므로 크기와 직렬화 시간을 줄인다
+            WriteIndented = false,
             DefaultIgnoreCondition = JsonIgnoreCondition.Never,
             ReadCommentHandling = JsonCommentHandling.Skip,
             AllowTrailingCommas = true,

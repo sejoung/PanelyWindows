@@ -20,6 +20,7 @@ public sealed partial class TranslationFeature
     private (int Page, Point Start)? _dragStart;
     private (int Page, RectD Rect)? _pressedBubble;
     private (int Page, Rect Rect)? _dragRect;
+    private DrawingGroup? _dragBase;
     private WpfPagePixelSource? _localPixels;
 
     private WpfPagePixelSource LocalPixels => _localPixels ??= new WpfPagePixelSource(_services.Decoder);
@@ -56,21 +57,37 @@ public sealed partial class TranslationFeature
         if (scaled) dc.PushTransform(new ScaleTransform(scale, scale));
         try
         {
-            if (ShowingTranslation || _editing)
+            if (_editing && _dragRect is { } drag && drag.Page == pageIndex)
             {
-                var sources = EditResolver.ToPatchSources(d.Bubbles, includePending: true);
-                OverlayPainter.DrawPatches(dc, PatchGeometry.Layout(sources, d.ImageWidth));
+                // 드래그 중에는 마우스가 움직일 때마다 불린다: 풍선은 한 번만 배치하고 선택 사각형만 새로 그린다
+                if (_dragBase is null)
+                {
+                    _dragBase = new DrawingGroup();
+                    using (var ctx = _dragBase.Open()) DrawPageContent(ctx, d.Bubbles, d.ImageWidth);
+                    _dragBase.Freeze();
+                }
+                dc.DrawDrawing(_dragBase);
+                OverlayPainter.DrawSelection(dc, drag.Rect, d.ImageWidth);
             }
-            if (_editing)
+            else
             {
-                OverlayPainter.DrawEditDecorations(dc, d.Bubbles, d.ImageWidth);
-                if (_dragRect is { } drag && drag.Page == pageIndex) OverlayPainter.DrawSelection(dc, drag.Rect, d.ImageWidth);
+                DrawPageContent(dc, d.Bubbles, d.ImageWidth);
             }
         }
         finally
         {
             if (scaled) dc.Pop();
         }
+    }
+
+    private void DrawPageContent(DrawingContext dc, List<DisplayBubble> bubbles, double imageWidth)
+    {
+        if (ShowingTranslation || _editing)
+        {
+            var sources = EditResolver.ToPatchSources(bubbles, includePending: true);
+            OverlayPainter.DrawPatches(dc, PatchGeometry.Layout(sources, imageWidth));
+        }
+        if (_editing) OverlayPainter.DrawEditDecorations(dc, bubbles, imageWidth);
     }
 
     /// <summary>view 점 → (페이지, 캐시 이미지 픽셀 좌표). strip에서는 이전 페이지 풍선이 넘친 영역도 찾는다.</summary>
@@ -130,6 +147,7 @@ public sealed partial class TranslationFeature
         if (_editing && ToImagePoint(viewPoint) is { } p)
         {
             ClosePopover();
+            _dragBase = null;
             _dragStart = (p.Page, p.Px);
             _dragRect = (p.Page, new Rect(p.Px, p.Px));
             return true;
@@ -140,11 +158,11 @@ public sealed partial class TranslationFeature
     public bool OnPointerMoved(Point viewPoint, bool leftButtonDown)
     {
         if (_dragStart is not { } start) return false;
-        if (!leftButtonDown) { _dragStart = null; _dragRect = null; _host?.InvalidateOverlay(); return false; }
+        if (!leftButtonDown) { _dragStart = null; _dragRect = null; _dragBase = null; _host?.InvalidatePageOverlay(start.Page); return false; }
         if (ToImagePoint(viewPoint, start.Page) is { } p)
         {
             _dragRect = (start.Page, new Rect(start.Start, p.Px));
-            _host?.InvalidateOverlay();
+            _host?.InvalidatePageOverlay(start.Page);
         }
         return true;
     }
@@ -169,7 +187,8 @@ public sealed partial class TranslationFeature
         var rect = _dragRect?.Rect ?? Rect.Empty;
         _dragStart = null;
         _dragRect = null;
-        _host?.InvalidateOverlay();
+        _dragBase = null;
+        _host?.InvalidatePageOverlay(start.Page);
         if (rect.Width >= 8 && rect.Height >= 8) _ = AddBalloonAsync(start.Page, new RectD(rect.X, rect.Y, rect.Width, rect.Height));
         return true;
     }

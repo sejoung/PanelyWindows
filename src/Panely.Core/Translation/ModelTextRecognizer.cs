@@ -23,7 +23,7 @@ public interface ILanguageIdentifier
 /// 일본어 = manga-ocr(상자 crop 통째로, 세로쓰기 포함), 중국어·영어·한국어 = PP-OCRv5(줄 탐지 + CTC).
 /// 모델 팩이 설치되지 않았으면 다운로드를 안내하고(Supported), 모델 manifest 자체가 없을 때만 Windows OCR로 돌아간다.
 /// </summary>
-public sealed class ModelTextRecognizer : ITextRecognizer, IRegionTextRecognizer, ILanguageIdentifier, IDisposable
+public sealed class ModelTextRecognizer : ITextRecognizer, IRegionTextRecognizer, ILanguageIdentifier, IIdleReleasable, IDisposable
 {
     private readonly ModelStore _store;
     private readonly ITextRecognizer? _fallback;
@@ -187,6 +187,12 @@ public sealed class ModelTextRecognizer : ITextRecognizer, IRegionTextRecognizer
         var dx = r.Width * fraction;
         var dy = r.Height * fraction;
         return RectD.FromEdges(Math.Max(0, r.Left - dx), Math.Max(0, r.Top - dy), Math.Min(image.Width, r.Right + dx), Math.Min(image.Height, r.Bottom + dy));
+    }
+
+    public async Task ReleaseIdleAsync(CancellationToken cancellationToken)
+    {
+        await Manga.ReleaseIdleAsync(cancellationToken).ConfigureAwait(false);
+        await PpOcr.ReleaseIdleAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public void Dispose()

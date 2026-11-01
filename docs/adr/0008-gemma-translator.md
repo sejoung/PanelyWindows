@@ -1,6 +1,6 @@
 # ADR 0008: 번역 모델을 Gemma 4 E2B 하나로 바꾸고 llama.cpp(LLamaSharp)로 앱 안에서 돌린다
 
-- 상태: 채택
+- 상태: 채택. 모델을 앱 종료까지 유지하던 것은 [ADR 0009](0009-reader-performance.md)의 유휴 해제로 바뀜(2026-11-01)
 - 날짜: 2026-10-20
 - 대체: ADR 0004의 번역 모델(M2M100 Fast/Accurate)과 6번(말투 보정 없음), 7번(M2M100 선택) 결정
 - 관련 코드: `GemmaTranslator`, `ITranslator`(`TranslationContextLine`, `PrepareAsync`), `TranslationScheduler`(문맥 전달·`TranslationOptions.TranslateChunk`·`ContextLines`), `ModelCatalog.TranslatorId`·`ObsoleteIds`, `ModelStore.RemoveObsolete`, `ExperimentalSettingsView`, `Panely.App.csproj`(`KeepOnlyWindowsLlamaNatives`)

@@ -138,6 +138,12 @@ public sealed class PagePixels
     }
 }
 
+/// <summary>오래 쓰지 않으면 모델을 메모리(RAM·VRAM)에서 내릴 수 있는 공급자. 다음 사용 때 다시 올린다.</summary>
+public interface IIdleReleasable
+{
+    Task ReleaseIdleAsync(CancellationToken cancellationToken);
+}
+
 /// <summary>OCR 공급자.</summary>
 public interface ITextRecognizer
 {

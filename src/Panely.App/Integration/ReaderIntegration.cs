@@ -72,6 +72,9 @@ public interface IReaderHost
     /// <summary>번역 오버레이를 다시 그린다(RenderPageOverlay 재호출).</summary>
     void InvalidateOverlay();
 
+    /// <summary>한 쪽의 번역 오버레이만 다시 그린다.</summary>
+    void InvalidatePageOverlay(int pageIndex);
+
     /// <summary>번역 범주 안내(알림 우선순위 최하위). duration null이면 사용자가 닫을 때까지.</summary>
     void ShowNotice(string message, TimeSpan? duration = null);
 

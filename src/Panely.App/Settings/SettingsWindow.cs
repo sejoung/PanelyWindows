@@ -249,18 +249,34 @@ public sealed class SettingsWindow : Window
         };
         p.Children.Add(clear);
         p.Children.Add(note);
-        _refreshStorage = () =>
+        // 사용량 계산은 캐시의 entry.json을 모두 읽는다. 이 탭이 보일 때만 worker에서 계산한다.
+        var refreshing = false;
+        _refreshStorage = async () =>
         {
-            var u = _services.ExtractionCache.GetUsage();
-            total.Text = MainWindow.FormatBytes(u.TotalBytes);
-            clearable.Text = MainWindow.FormatBytes(u.ClearableBytes);
-            limit.Text = MainWindow.FormatBytes(u.LimitBytes);
-            var busy = _main.IsLoadingBook || (_services.ExtractionCache is Panely.Core.Cache.ExtractionCache ec && ec.IsBusy);
-            clear.IsEnabled = !busy && u.ClearableBytes > 0;
-            clear.ToolTip = busy ? Loc.T("Available after loading finishes.") : u.ClearableBytes == 0 ? Loc.T("There is no inactive extraction cache to remove.") : null;
-            ToolTipService.SetShowOnDisabled(clear, true);
+            if (refreshing || !total.IsVisible) return;
+            refreshing = true;
+            try
+            {
+                var cache = _services.ExtractionCache;
+                var u = await Task.Run(cache.GetUsage);
+                total.Text = MainWindow.FormatBytes(u.TotalBytes);
+                clearable.Text = MainWindow.FormatBytes(u.ClearableBytes);
+                limit.Text = MainWindow.FormatBytes(u.LimitBytes);
+                var busy = _main.IsLoadingBook || (cache is Panely.Core.Cache.ExtractionCache ec && ec.IsBusy);
+                clear.IsEnabled = !busy && u.ClearableBytes > 0;
+                clear.ToolTip = busy ? Loc.T("Available after loading finishes.") : u.ClearableBytes == 0 ? Loc.T("There is no inactive extraction cache to remove.") : null;
+                ToolTipService.SetShowOnDisabled(clear, true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // 다음 갱신에서 다시 읽는다
+            }
+            finally
+            {
+                refreshing = false;
+            }
         };
-        _refreshStorage();
+        total.IsVisibleChanged += (_, e) => { if (e.NewValue is true) _refreshStorage?.Invoke(); };
         return p;
     }
 
