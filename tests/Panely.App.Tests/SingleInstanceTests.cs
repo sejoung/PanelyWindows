@@ -109,6 +109,8 @@ public sealed class SingleInstanceTests : IDisposable
         var blocker = new NamedPipeServerStream(_instance.PipeName, PipeDirection.In, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
         _instance.StartServer();
         _instance.MarkReady();
+        // 서버 작업이 늦게 시작해도(바쁜 CI) 첫 실패를 본 뒤 1초를 잰다
+        Assert.True(SpinWait.SpinUntil(() => _instance.ServerFaults >= 1, Wait), "서버 생성이 실패하지 않았습니다.");
         Thread.Sleep(1000);
         Assert.InRange(_instance.ServerFaults, 1, 8); // 100·200·400·800ms 간격. 간격이 없으면 수천 회
 

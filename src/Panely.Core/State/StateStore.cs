@@ -27,6 +27,7 @@ public sealed class StateStore : IStateStore, IDisposable
     private const int ReadAttempts = 5;
     private static readonly TimeSpan ReadRetryDelay = TimeSpan.FromMilliseconds(100);
 
+    private readonly Action _readRetryWait;
     private readonly IDiagnostics _diagnostics;
     private readonly string _statePath;
     private readonly string _backupPath;
@@ -43,8 +44,14 @@ public sealed class StateStore : IStateStore, IDisposable
 
     public StateStore(AppPaths paths, IDiagnostics diagnostics) : this(paths, diagnostics, TimeSpan.FromSeconds(2), TimeSpan.FromMilliseconds(300)) { }
 
-    internal StateStore(AppPaths paths, IDiagnostics diagnostics, TimeSpan positionThrottle, TimeSpan otherDelay)
+    /// <param name="paths">앱 경로.</param>
+    /// <param name="diagnostics">진단 기록.</param>
+    /// <param name="positionThrottle">위치 저장 간격.</param>
+    /// <param name="otherDelay">그 밖의 저장 지연.</param>
+    /// <param name="readRetryWait">읽기 재시도 사이의 대기(테스트가 시간에 기대지 않고 잠금을 풀 수 있게). 기본은 잠깐 잔다.</param>
+    internal StateStore(AppPaths paths, IDiagnostics diagnostics, TimeSpan positionThrottle, TimeSpan otherDelay, Action? readRetryWait = null)
     {
+        _readRetryWait = readRetryWait ?? (() => Thread.Sleep(ReadRetryDelay));
         _diagnostics = diagnostics;
         PositionThrottle = positionThrottle;
         OtherDelay = otherDelay;
@@ -140,12 +147,12 @@ public sealed class StateStore : IStateStore, IDisposable
     private enum ParseOutcome { Ok, Corrupt, ReadFailed }
 
     /// <summary>백신·동기화 도구가 잠깐 잡은 잠금은 곧 풀리므로 입출력 오류만 다시 시도한다.</summary>
-    private static ParseOutcome ParseWithRetry(string path, out StateDocument? doc, out string? error)
+    private ParseOutcome ParseWithRetry(string path, out StateDocument? doc, out string? error)
     {
         var outcome = TryParse(path, out doc, out error);
         for (var attempt = 1; attempt < ReadAttempts && outcome == ParseOutcome.ReadFailed; attempt++)
         {
-            Thread.Sleep(ReadRetryDelay);
+            _readRetryWait();
             outcome = TryParse(path, out doc, out error);
         }
         return outcome;

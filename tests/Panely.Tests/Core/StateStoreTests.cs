@@ -314,24 +314,23 @@ public class StateStoreTests
     }
 
     [Fact]
-    public async Task BrieflyLockedState_LoadsNormally()
+    public void BrieflyLockedState_LoadsNormally()
     {
         var (t, paths, diag) = Env();
         using var scope = t;
         File.Copy(ExamplePath, paths.StateFile);
         var fileLock = new FileStream(paths.StateFile, FileMode.Open, FileAccess.Read, FileShare.None);
-        var release = Task.Run(async () =>
+        var waits = 0;
+        // 재시도 대기 안에서 잠금을 푼다. 다른 스레드와 시계로 맞추면 바쁜 CI에서 재시도 창을 놓친다.
+        using var store = new StateStore(paths, diag, TimeSpan.FromSeconds(2), TimeSpan.FromMilliseconds(300), () =>
         {
-            await Task.Delay(50);
+            waits++;
             fileLock.Dispose();
         });
-        using (var store = new StateStore(paths, diag))
-        {
-            Assert.False(store.IsReadOnly);
-            Assert.Null(store.LoadProblem);
-            Assert.Equal(2, store.GetPosition(SampleKey));
-        }
-        await release;
+        Assert.Equal(1, waits);
+        Assert.False(store.IsReadOnly);
+        Assert.Null(store.LoadProblem);
+        Assert.Equal(2, store.GetPosition(SampleKey));
     }
 
     [Fact]
