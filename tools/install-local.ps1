@@ -32,6 +32,18 @@ param(
 . "$PSScriptRoot\_common.ps1"
 $started = Get-Date
 if (-not $InstallDir) { $InstallDir = $DefaultInstallDir }
+
+# robocopy /MIR은 대상 폴더의 다른 파일을 모두 지운다. 이전 설치 표시(install-info.json)가 없는 비어 있지 않은 폴더는 거부한다.
+function Assert-InstallTarget([string]$directory) {
+    if (-not (Test-Path -LiteralPath $directory)) { return }
+    if (Test-Path -LiteralPath $directory -PathType Leaf) { throw "설치 경로가 폴더가 아니라 파일입니다: $directory" }
+    if (Test-Path -LiteralPath (Join-Path $directory 'install-info.json')) { return }
+    if (Get-ChildItem -LiteralPath $directory -Force | Select-Object -First 1) {
+        throw "install-local.ps1로 설치한 폴더가 아니고 비어 있지 않아 설치를 중단합니다(install-info.json 없음). 설치하면 이 폴더의 파일이 모두 삭제됩니다. 빈 폴더나 새 경로를 지정하세요: $directory"
+    }
+}
+Assert-InstallTarget $InstallDir
+
 if ($Runtime -eq 'auto') {
     $Runtime = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64' -or $env:PROCESSOR_ARCHITEW6432 -eq 'ARM64') { 'win-arm64' } else { 'win-x64' }
 }
@@ -73,8 +85,11 @@ Write-Ok "게시됨: $staging"
 Write-Step "설치: $InstallDir"
 Stop-PanelyIn $InstallDir
 New-Item -ItemType Directory -Force $InstallDir | Out-Null
+# 복사가 중간에 실패해도 이 폴더가 우리 설치임을 알 수 있게 표시를 먼저 두고 /MIR에서 제외한다(다음 설치·제거가 거부되지 않게).
+$infoPath = Join-Path $InstallDir 'install-info.json'
+if (-not (Test-Path -LiteralPath $infoPath)) { Set-Content -LiteralPath $infoPath -Value '{}' -Encoding UTF8 }
 # /MIR: 이전 빌드에만 있던 파일까지 정리. robocopy 종료 코드 0~7은 성공.
-& robocopy $staging $InstallDir /MIR /NFL /NDL /NJH /NJS /NP /R:2 /W:1 | Out-Null
+& robocopy $staging $InstallDir /MIR /XF install-info.json /NFL /NDL /NJH /NJS /NP /R:2 /W:1 | Out-Null
 if ($LASTEXITCODE -ge 8) { throw "파일 복사 실패 (robocopy exit $LASTEXITCODE). 설치 폴더의 Panely가 아직 실행 중인지 확인하세요." }
 $global:LASTEXITCODE = 0
 
@@ -88,7 +103,7 @@ $info = [ordered]@{
     installedAt   = (Get-Date).ToUniversalTime().ToString('o')
     source        = $RepoRoot
 }
-$info | ConvertTo-Json | Set-Content (Join-Path $InstallDir 'install-info.json') -Encoding UTF8
+$info | ConvertTo-Json | Set-Content -LiteralPath $infoPath -Encoding UTF8
 Write-Ok "설치됨: $exe"
 Write-Note "버전: $($info.version)"
 

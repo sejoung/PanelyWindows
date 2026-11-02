@@ -11,6 +11,7 @@ namespace Panely.Core.State;
 /// - 쓰기: 같은 디렉터리 temp → flush → File.Replace(.bak 유지).
 /// - 손상 파일은 격리 사본을 남기고 .bak 또는 기본값으로 시작한다. 원본은 덮지 않는다.
 /// - 미래 schemaVersion이면 읽기 전용(IsReadOnly)으로 동작하고 쓰지 않는다.
+/// - 파일을 읽지 못하면(잠김·권한) 손상이 아니다. 잠깐 다시 시도하고, 그래도 안 되면 읽기 전용으로 동작해 멀쩡한 파일을 덮지 않는다.
 /// </summary>
 public sealed class StateStore : IStateStore, IDisposable
 {
@@ -22,6 +23,9 @@ public sealed class StateStore : IStateStore, IDisposable
     public const int MaxBookmarkedBooks = 200;
     public const int MaxSeries = 2000;
     public const int MaxExportHistory = 50;
+
+    private const int ReadAttempts = 5;
+    private static readonly TimeSpan ReadRetryDelay = TimeSpan.FromMilliseconds(100);
 
     private readonly IDiagnostics _diagnostics;
     private readonly string _statePath;
@@ -61,7 +65,10 @@ public sealed class StateStore : IStateStore, IDisposable
     /// <summary>미래 schema 등으로 쓰기를 하지 않는 상태.</summary>
     public bool IsReadOnly { get; private set; }
 
-    /// <summary>로드 중 발생한 문제(손상 격리/미래 schema). UI 복구 안내용, 없으면 null.</summary>
+    /// <summary>저장 파일을 읽지 못해 읽기 전용이 된 상태(잠김·권한). IsReadOnly의 원인 중 미래 schema와 구분한다.</summary>
+    public bool IsReadFailure { get; private set; }
+
+    /// <summary>로드 중 발생한 문제(손상 격리/미래 schema/읽기 실패). UI 복구 안내용, 없으면 null.</summary>
     public string? LoadProblem { get; private set; }
 
     /// <summary>손상 파일 격리 사본 경로(있으면).</summary>
@@ -71,13 +78,10 @@ public sealed class StateStore : IStateStore, IDisposable
 
     private StateDocument Load()
     {
-        if (!File.Exists(_statePath))
-        {
-            if (File.Exists(_backupPath) && TryParse(_backupPath, out var fromBackup, out _)) return fromBackup!;
-            return new StateDocument();
-        }
+        if (!File.Exists(_statePath)) return LoadBackup() ?? new StateDocument();
 
-        if (TryParse(_statePath, out var doc, out var error))
+        var outcome = ParseWithRetry(_statePath, out var doc, out var error);
+        if (outcome == ParseOutcome.Ok)
         {
             if (doc!.SchemaVersion > CurrentSchemaVersion)
             {
@@ -86,6 +90,13 @@ public sealed class StateStore : IStateStore, IDisposable
                 _diagnostics.Log(LogLevel.Error, LogCategory.Persistence, LoadProblem);
             }
             return doc;
+        }
+
+        if (outcome == ParseOutcome.ReadFailed)
+        {
+            // 손상이 아니므로 격리하지 않는다. 볼 수 있는 값으로 시작하되 원본은 덮지 않는다.
+            EnterReadFailure($"state.json could not be read ({error}). Running read-only.");
+            return LoadBackup() ?? new StateDocument();
         }
 
         // 손상: 격리 사본을 남기고(원본은 그대로 둠) 백업 또는 기본값으로 시작
@@ -101,7 +112,7 @@ public sealed class StateStore : IStateStore, IDisposable
         }
         LoadProblem = $"state.json could not be read ({error}). A copy was kept and defaults were used.";
         _diagnostics.Log(LogLevel.Error, LogCategory.Persistence, LoadProblem);
-        if (File.Exists(_backupPath) && TryParse(_backupPath, out var backup, out _) && backup!.SchemaVersion <= CurrentSchemaVersion)
+        if (LoadBackup() is { } backup)
         {
             _diagnostics.Log(LogLevel.Notice, LogCategory.Persistence, "Restored state from backup copy");
             return backup;
@@ -109,7 +120,38 @@ public sealed class StateStore : IStateStore, IDisposable
         return new StateDocument();
     }
 
-    private static bool TryParse(string path, out StateDocument? doc, out string? error)
+    /// <summary>.bak에서 읽는다. 없거나 쓸 수 없으면 null. 읽지 못하는 .bak은 나중 저장이 덮지 않게 읽기 전용으로 둔다.</summary>
+    private StateDocument? LoadBackup()
+    {
+        if (!File.Exists(_backupPath)) return null;
+        var outcome = ParseWithRetry(_backupPath, out var backup, out var error);
+        if (outcome == ParseOutcome.ReadFailed) EnterReadFailure($"state.json.bak could not be read ({error}). Running read-only.");
+        return outcome == ParseOutcome.Ok && backup!.SchemaVersion <= CurrentSchemaVersion ? backup : null;
+    }
+
+    private void EnterReadFailure(string problem)
+    {
+        IsReadOnly = true;
+        IsReadFailure = true;
+        LoadProblem = problem;
+        _diagnostics.Log(LogLevel.Error, LogCategory.Persistence, problem);
+    }
+
+    private enum ParseOutcome { Ok, Corrupt, ReadFailed }
+
+    /// <summary>백신·동기화 도구가 잠깐 잡은 잠금은 곧 풀리므로 입출력 오류만 다시 시도한다.</summary>
+    private static ParseOutcome ParseWithRetry(string path, out StateDocument? doc, out string? error)
+    {
+        var outcome = TryParse(path, out doc, out error);
+        for (var attempt = 1; attempt < ReadAttempts && outcome == ParseOutcome.ReadFailed; attempt++)
+        {
+            Thread.Sleep(ReadRetryDelay);
+            outcome = TryParse(path, out doc, out error);
+        }
+        return outcome;
+    }
+
+    private static ParseOutcome TryParse(string path, out StateDocument? doc, out string? error)
     {
         doc = null;
         error = null;
@@ -118,25 +160,25 @@ public sealed class StateStore : IStateStore, IDisposable
             var text = File.ReadAllText(path);
             using (var probe = JsonDocument.Parse(text, new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip }))
             {
-                if (probe.RootElement.ValueKind != JsonValueKind.Object) { error = "root is not an object"; return false; }
+                if (probe.RootElement.ValueKind != JsonValueKind.Object) { error = "root is not an object"; return ParseOutcome.Corrupt; }
                 if (probe.RootElement.TryGetProperty("schemaVersion", out var v) && v.TryGetInt32(out var version) && version > CurrentSchemaVersion)
                 {
                     // 미래 형식: 알 수 있는 부분만 읽는다
                     doc = TryLenient(text) ?? new StateDocument();
                     doc.SchemaVersion = version;
-                    return true;
+                    return ParseOutcome.Ok;
                 }
             }
             doc = JsonSerializer.Deserialize<StateDocument>(text, StateJson.Options);
-            if (doc is null) { error = "empty"; return false; }
+            if (doc is null) { error = "empty"; return ParseOutcome.Corrupt; }
             Normalize(doc);
-            return true;
+            return ParseOutcome.Ok;
         }
-        catch (JsonException ex) { error = ex.GetType().Name; return false; }
-        catch (NotSupportedException ex) { error = ex.GetType().Name; return false; }
-        catch (FormatException ex) { error = ex.GetType().Name; return false; }
-        catch (IOException ex) { error = ex.GetType().Name; return false; }
-        catch (UnauthorizedAccessException ex) { error = ex.GetType().Name; return false; }
+        catch (JsonException ex) { error = ex.GetType().Name; return ParseOutcome.Corrupt; }
+        catch (NotSupportedException ex) { error = ex.GetType().Name; return ParseOutcome.Corrupt; }
+        catch (FormatException ex) { error = ex.GetType().Name; return ParseOutcome.Corrupt; }
+        catch (IOException ex) { error = ex.GetType().Name; return ParseOutcome.ReadFailed; }
+        catch (UnauthorizedAccessException ex) { error = ex.GetType().Name; return ParseOutcome.ReadFailed; }
     }
 
     private static StateDocument? TryLenient(string text)
@@ -145,18 +187,37 @@ public sealed class StateStore : IStateStore, IDisposable
         catch (Exception ex) when (ex is JsonException or NotSupportedException or FormatException) { return null; }
     }
 
+    /// <summary>JSON으로는 유효한 null 멤버를 걷어 낸다. 참조를 잃은 항목은 쓸 수 없으므로 버린다.</summary>
     private static void Normalize(StateDocument doc)
     {
         doc.Settings ??= new AppSettings();
         doc.Sources ??= [];
-        doc.Positions = new Dictionary<string, PositionDto>(doc.Positions ?? [], StringComparer.Ordinal);
-        doc.Progress = new Dictionary<string, ProgressDto>(doc.Progress ?? [], StringComparer.Ordinal);
+        doc.Sources.RemoveAll(s => s?.Path is null);
+        doc.Positions = WithoutNullValues(doc.Positions);
+        doc.Progress = WithoutNullValues(doc.Progress);
         doc.Recents ??= [];
+        doc.Recents.RemoveAll(r => r is null);
         doc.Favorites ??= [];
-        doc.Bookmarks = new Dictionary<string, BookBookmarksDto>(doc.Bookmarks ?? [], StringComparer.Ordinal);
-        doc.SeriesPreferences = new Dictionary<string, SeriesPreferences>(doc.SeriesPreferences ?? [], StringComparer.Ordinal);
+        doc.Favorites.RemoveAll(f => f?.BookRef is null);
+        doc.Bookmarks = WithoutNullValues(doc.Bookmarks);
+        foreach (var key in doc.Bookmarks.Where(p => p.Value.BookRef is null).Select(p => p.Key).ToList()) doc.Bookmarks.Remove(key);
+        doc.SeriesPreferences = WithoutNullValues(doc.SeriesPreferences);
         doc.ExportHistory ??= [];
-        foreach (var b in doc.Bookmarks.Values) b.Bookmarks ??= [];
+        doc.ExportHistory.RemoveAll(e => e is null);
+        foreach (var b in doc.Bookmarks.Values)
+        {
+            b.Bookmarks ??= [];
+            b.Bookmarks.RemoveAll(x => x is null);
+        }
+    }
+
+    private static Dictionary<string, T> WithoutNullValues<T>(Dictionary<string, T>? source) where T : class
+    {
+        var result = new Dictionary<string, T>(StringComparer.Ordinal);
+        if (source is null) return result;
+        foreach (var (key, value) in source)
+            if (value is not null) result[key] = value;
+        return result;
     }
 
     /// <summary>시작 시 참조 없는 metadata 정리와 상한 적용. 세션 중에는 source를 지우지 않는다.</summary>

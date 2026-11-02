@@ -300,6 +300,32 @@ public class ModelManifestTests
         Assert.NotEqual(CapabilityStatus.Downloading, packs.GetCapability("en", "ko").Status);
     }
 
+    [Fact]
+    public async Task InstallMissingDoesNotNotifyInsideItsLock()
+    {
+        using var dir = new TempDir();
+        var payload = new byte[16];
+        var release = new TaskCompletionSource();
+        var store = new ModelStore(dir.Path, () => new HttpClient(new GatedHandler(payload, release.Task)), [PackManifest(ModelCatalog.TranslatorId, payload)]);
+        var recognizer = new FakeRecognizer();
+        recognizer.Languages.Clear();
+        var packs = new LanguagePackManager(store, recognizer, new PseudoTranslator { Delay = TimeSpan.Zero });
+        var reached = new List<bool>();
+        // 알림을 받은 쪽(작업 스케줄러)이 다른 스레드와 얽혀 팩 관리자의 잠금을 기다려도 교착되지 않아야 한다
+        packs.PacksChanged += (_, _) =>
+        {
+            var finished = Task.Run(() => packs.GetCapability("en", "ko")).Wait(TimeSpan.FromSeconds(3));
+            lock (reached) reached.Add(finished);
+        };
+
+        var install = packs.InstallMissingAsync("en", "ko", CancellationToken.None);
+        await Wait.UntilAsync(() => { lock (reached) return reached.Count > 0; });
+        release.SetResult();
+        await install;
+
+        lock (reached) Assert.All(reached, Assert.True);
+    }
+
     private sealed class PerFileHandler(Dictionary<string, (byte[] Payload, Task Gate)> files) : HttpMessageHandler
     {
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

@@ -147,6 +147,35 @@ public class ImageHeaderTests
         Assert.Equal((3024, 4032, 6, "heif"), Read(data));
     }
 
+    [Theory]
+    [InlineData(0x7FFFFFFFFFFFFFE0ul)] // i + size가 long을 넘겨 i가 0으로 돌아가던 값
+    [InlineData(0x8000000000000000ul)] // long으로 바꾸면 음수
+    [InlineData(ulong.MaxValue)]
+    [InlineData(2ul)] // 헤더보다 작다
+    public async Task Heif_Crafted64BitBoxSize_ScanEnds(ulong declared)
+    {
+        var data = new byte[64];
+        BinaryPrimitives.WriteUInt32BigEndian(data, 32);
+        "ftypheic"u8.CopyTo(data.AsSpan(4));
+        BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(32), 1);
+        "free"u8.CopyTo(data.AsSpan(36));
+        BinaryPrimitives.WriteUInt64BigEndian(data.AsSpan(40), declared);
+        var read = await Task.Run(() => ImageHeaderReader.TryRead(data, out _)).WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.False(read);
+    }
+
+    [Fact]
+    public void Heif_Valid64BitBoxSize_IsSkipped()
+    {
+        byte[] ftyp = Box("ftyp", "heic"u8.ToArray(), new byte[4], "mif1heic"u8.ToArray());
+        var free = new byte[24];
+        BinaryPrimitives.WriteUInt32BigEndian(free, 1);
+        "free"u8.CopyTo(free.AsSpan(4));
+        BinaryPrimitives.WriteUInt64BigEndian(free.AsSpan(8), (ulong)free.Length);
+        byte[] meta = Box("meta", new byte[4], Box("iprp", Box("ipco", Box("ispe", new byte[4], BE(640), BE(480)))));
+        Assert.Equal((640, 480, 1, "heif"), Read([.. ftyp, .. free, .. meta]));
+    }
+
     private static byte[] BE(int v)
     {
         var b = new byte[4];

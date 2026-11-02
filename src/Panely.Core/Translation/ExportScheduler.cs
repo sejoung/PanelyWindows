@@ -46,6 +46,9 @@ public sealed class ExportScheduler
     private readonly ITranslatedPageRenderer _renderer;
     private readonly IStateStore? _state;
     private readonly Func<string, string> _languageName;
+    /// <summary>같은 범위 작업이 끝났는데도 쪽이 빠져 있을 때 다시 돌려 보는 횟수(일시적으로 읽지 못한 경우 등). 그래도 없으면 실패로 알린다.</summary>
+    private const int MaxTranslateRounds = 3;
+
     private readonly SemaphoreSlim _renderSlot = new(1, 1);
     private readonly object _gate = new();
     private readonly Dictionary<Guid, Entry> _jobs = new();
@@ -144,16 +147,16 @@ public sealed class ExportScheduler
             using var book = await _books.OpenAsync(request.Book, ct).ConfigureAwait(false);
             Set(e, i => i with { Total = book.Pages.Count });
 
-            var source = request.Source ?? _translation.Get(request.Book.BookKey, request.Target)?.Source;
-            var cached = source is null ? new HashSet<int>() : _translation.CachedPages(book.Pages, source, request.Target, request.Scope);
+            var source = ResolveSource(request, book);
+            // 파일이 있어도 읽히는 쪽만 번역된 것으로 친다(손상 파일은 TryLoad가 지우므로 번역을 다시 돌리면 새로 만들어진다)
+            var translated = LoadTranslated(request, book, source, ct);
 
-            if (request.Policy == UntranslatedPolicy.TranslateFirst && cached.Count < book.Pages.Count)
+            if (request.Policy == UntranslatedPolicy.TranslateFirst && translated.Count < book.Pages.Count)
             {
                 Set(e, i => i with { Phase = ExportPhase.Translating });
-                source = await WaitForTranslationAsync(request, source, ct).ConfigureAwait(false);
-                cached = _translation.CachedPages(book.Pages, source, request.Target, request.Scope);
+                translated = await TranslateMissingAsync(request, book, source, ct).ConfigureAwait(false);
             }
-            else if (request.Policy == UntranslatedPolicy.ExportAsIs && cached.Count == 0)
+            else if (request.Policy == UntranslatedPolicy.ExportAsIs && translated.Count == 0 && !book.Pages.Any(p => AddedBalloonSources(p, request).Count > 0))
             {
                 throw new ExportFailure(Loc.T("Nothing in this book is translated into this language yet."));
             }
@@ -167,7 +170,7 @@ public sealed class ExportScheduler
                 Directory.CreateDirectory(request.Destination);
                 var extension = request.Format == ExportFormat.Folder ? string.Empty : request.Format == ExportFormat.Zip ? ".zip" : ".cbz";
                 staging = Path.Combine(request.Destination, $".{baseName}.{Guid.NewGuid():N}.partial");
-                await WriteAsync(e, book, source, cached, request, staging, ct).ConfigureAwait(false);
+                await WriteAsync(e, book, translated, request, staging, ct).ConfigureAwait(false);
                 ct.ThrowIfCancellationRequested();
 
                 var final = PublishStaging(staging, request.Destination, baseName, extension, request.Format == ExportFormat.Folder);
@@ -205,22 +208,82 @@ public sealed class ExportScheduler
         }
     }
 
-    private async Task<string> WaitForTranslationAsync(ExportRequest request, string? source, CancellationToken ct)
+    /// <summary>
+    /// 원어: 요청 → 진행 중 작업 → 시리즈에 기억한 값 → 캐시에서 찾기. 작업 큐는 재시작하면 사라지고 시트는 다른 권의 원어를 모르므로(null)
+    /// 캐시에 결과가 있는 원어를 우선한다. 모두 없으면 null(번역 작업이 언어를 감지한다).
+    /// </summary>
+    private string? ResolveSource(ExportRequest request, OpenedBook book)
     {
-        var done = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var known = request.Source
+            ?? _translation.Get(request.Book.BookKey, request.Target)?.Source
+            ?? _state?.GetSeries(request.Book.SeriesKey)?.TranslationSource;
+        if (known is not null && _translation.CachedPages(book.Pages, known, request.Target, request.Scope).Count > 0) return known;
+        var other = request.Scope == TranslationScope.Strip ? TranslationScope.Page : TranslationScope.Strip;
+        return _translation.FindCachedSource(book.Pages, request.Target, request.Scope)
+            ?? known
+            ?? _translation.FindCachedSource(book.Pages, request.Target, other)
+            ?? _translation.DiscoverSource(book.Pages, request.Scope)
+            ?? _translation.DiscoverSource(book.Pages, other);
+    }
+
+    private Dictionary<int, TranslatedPage> LoadTranslated(ExportRequest request, OpenedBook book, string? source, CancellationToken ct)
+    {
+        var pages = new Dictionary<int, TranslatedPage>();
+        if (source is null) return pages;
+        for (var i = 0; i < book.Pages.Count; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (_translation.LoadCached(book.Pages[i].PageId, source, request.Target, request.Scope) is { } page) pages[i] = page;
+        }
+        return pages;
+    }
+
+    /// <summary>번역 캐시가 없는 쪽에서 그릴 것: 화면과 같이 사용자가 추가한 풍선만이다(기계 풍선 수정은 캐시의 글자 크기·배경이 있어야 그린다).</summary>
+    private List<PatchSource> AddedBalloonSources(PageEntry entry, ExportRequest request)
+        => _edits.Get(entry.PageId, request.Scope) is { } edits
+            ? EditResolver.ToPatchSources(EditResolver.Resolve([], edits, request.Target), includePending: false)
+            : [];
+
+    /// <summary>
+    /// 요청한 범위의 쪽이 모두 읽힐 때까지 번역을 돌린다. (책, 대상 언어)당 작업은 하나이고 범위나 쪽 지정이 다를 수 있으므로
+    /// 작업이 끝났다는 것만으로 믿지 않고 캐시를 다시 확인해 필요한 일을 시작한다. 같은 범위 작업이 끝났는데도 빠진 쪽이 계속 있으면 실패로 알린다.
+    /// </summary>
+    private async Task<Dictionary<int, TranslatedPage>> TranslateMissingAsync(ExportRequest request, OpenedBook book, string? source, CancellationToken ct)
+    {
+        var rounds = 0;
+        while (true)
+        {
+            var finished = await WaitForJobAsync(request, source, ct).ConfigureAwait(false);
+            source = finished.Scope == request.Scope ? finished.Source ?? source : source ?? finished.Source;
+            var pages = LoadTranslated(request, book, source, ct);
+            if (pages.Count >= book.Pages.Count) return pages;
+            if (finished.Scope == request.Scope && ++rounds >= MaxTranslateRounds)
+                throw new ExportFailure(Loc.T("Translation was stopped before the book was finished."));
+        }
+    }
+
+    /// <summary>
+    /// 필요하면 작업을 시작하고 끝나기를 기다린다. 다른 범위로 도는 작업은 사용자가 시작한 것이므로 끊지 않고 끝난 뒤에(실패해도) 호출한 쪽이 다시 부른다.
+    /// 쪽 지정 작업도 끝나기를 기다린다. 빠진 쪽은 호출한 쪽이 캐시를 확인해 다시 시작한다.
+    /// </summary>
+    private async Task<TranslationJobInfo> WaitForJobAsync(ExportRequest request, string? source, CancellationToken ct)
+    {
+        var done = new TaskCompletionSource<TranslationJobInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
+        TranslationJobInfo? other = null;
         void OnChanged(object? s, TranslationJobInfo info)
         {
             if (info.Book.BookKey != request.Book.BookKey || info.Target != request.Target) return;
-            if (info.Phase == TranslationPhase.Completed && info.Source is { } src) done.TrySetResult(src);
-            else if (info.Phase == TranslationPhase.Failed || (info.Phase == TranslationPhase.Paused && info.Reason == TranslationStopReason.NeedsLanguageDownload))
-                done.TrySetException(new ExportFailure(info.ReasonMessage ?? Loc.T("Translation was stopped before the book was finished.")));
-            else if (info.Phase == TranslationPhase.Paused && info.UserPaused)
-                done.TrySetException(new ExportFailure(Loc.T("Translation was stopped before the book was finished.")));
+            if (info.Phase == TranslationPhase.Completed) { done.TrySetResult(info); return; }
+            var stopped = info.Phase == TranslationPhase.Failed || (info.Phase == TranslationPhase.Paused && (info.UserPaused || info.Reason == TranslationStopReason.NeedsLanguageDownload));
+            if (!stopped) return;
+            if (info.Scope != request.Scope) done.TrySetResult(info);
+            else done.TrySetException(new ExportFailure((info.UserPaused ? null : info.ReasonMessage) ?? Loc.T("Translation was stopped before the book was finished.")));
         }
         void OnRemoved(object? s, string key)
         {
-            if (key == TranslationScheduler.JobKey(request.Book.BookKey, request.Target))
-                done.TrySetException(new ExportFailure(Loc.T("Translation was stopped before the book was finished.")));
+            if (key != TranslationScheduler.JobKey(request.Book.BookKey, request.Target)) return;
+            if (other is { } waitedFor) done.TrySetResult(waitedFor);
+            else done.TrySetException(new ExportFailure(Loc.T("Translation was stopped before the book was finished.")));
         }
         _translation.JobChanged += OnChanged;
         _translation.JobRemoved += OnRemoved;
@@ -229,6 +292,8 @@ public sealed class ExportScheduler
             var existing = _translation.Get(request.Book.BookKey, request.Target);
             if (existing is null || existing.Phase is TranslationPhase.Completed or TranslationPhase.Failed or TranslationPhase.Paused)
                 _translation.Start(request.Book, request.Target, source ?? existing?.Source, request.Scope);
+            else if (existing.Scope != request.Scope)
+                other = existing;
             using var reg = ct.Register(() => done.TrySetCanceled(ct));
             return await done.Task.ConfigureAwait(false);
         }
@@ -239,7 +304,7 @@ public sealed class ExportScheduler
         }
     }
 
-    private async Task WriteAsync(Entry e, OpenedBook book, string? source, HashSet<int> cached, ExportRequest request, string staging, CancellationToken ct)
+    private async Task WriteAsync(Entry e, OpenedBook book, IReadOnlyDictionary<int, TranslatedPage> translated, ExportRequest request, string staging, CancellationToken ct)
     {
         ZipArchive? zip = null;
         FileStream? zipStream = null;
@@ -262,12 +327,16 @@ public sealed class ExportScheduler
                 var ext = entry.Extension;
                 List<PatchLayout> patches = [];
                 double width = 0, height = 0;
-                if (source is not null && cached.Contains(i) && _translation.LoadCached(entry.PageId, source, request.Target, request.Scope) is { } page)
+                if (translated.TryGetValue(i, out var page))
                 {
                     width = page.ImageWidth; height = page.ImageHeight;
                     var edits = _edits.Get(entry.PageId, request.Scope);
                     var display = EditResolver.Resolve(page.Bubbles, edits, request.Target);
                     patches = PatchGeometry.Layout(EditResolver.ToPatchSources(display, includePending: false), page.ImageWidth);
+                }
+                else
+                {
+                    patches = PatchGeometry.Layout(AddedBalloonSources(entry, request), 0);
                 }
                 // strip 풍선이 이전 slice에서 넘친 부분
                 var overflow = request.Scope == TranslationScope.Strip && carry.Count > 0 && width > 0

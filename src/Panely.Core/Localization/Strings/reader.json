@@ -67,6 +67,10 @@
     "en": "Your saved data was created by a newer version of Panely. Changes won't be saved in this session.",
     "ko": "저장된 데이터가 더 새로운 Panely 버전에서 만들어졌습니다. 이번 세션의 변경은 저장되지 않습니다."
   },
+  "Panely couldn't open your saved data, possibly because another program is using it. Changes won't be saved in this session. Restart Panely to try again.": {
+    "en": "Panely couldn't open your saved data, possibly because another program is using it. Changes won't be saved in this session. Restart Panely to try again.",
+    "ko": "저장된 데이터를 열 수 없습니다. 다른 프로그램이 사용 중일 수 있습니다. 이번 세션의 변경은 저장되지 않습니다. 다시 시도하려면 Panely를 다시 시작하세요."
+  },
   "Your saved data couldn't be read, so Panely started with default settings. A copy of the old file was kept.": {
     "en": "Your saved data couldn't be read, so Panely started with default settings. A copy of the old file was kept.",
     "ko": "저장된 데이터를 읽을 수 없어 기본 설정으로 시작했습니다. 이전 파일의 사본은 보관했습니다."

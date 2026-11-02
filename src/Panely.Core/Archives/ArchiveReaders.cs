@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.IO.Compression;
+using System.Text;
 using Panely.Core.Abstractions;
 using Panely.Core.Localization;
 using SharpCompress.Archives;
@@ -158,6 +159,48 @@ internal sealed class ArchiveHandlePool<T> : IDisposable where T : class, IDispo
     }
 }
 
+/// <summary>
+/// UTF-8 표시가 없는 ZIP entry 이름의 복원. 아카이브 하나에는 인코딩 하나만 고른다:
+/// UTF-8 → 시스템 코드 페이지(CJK일 때) → 949 → 932 → 936 → 950 → 시스템 코드 페이지(단일 바이트일 때) 중
+/// 모든 이름을 오류 없이 풀어내는 첫 번째. 단일 바이트 코드 페이지는 어떤 바이트든 풀어내므로 앞에 두면 CJK 후보까지 가지 못한다.
+/// </summary>
+internal static class ZipNameDecoder
+{
+    private const int Utf8CodePage = 65001;
+    private static readonly int[] CommonLegacyCodePages = [949, 932, 936, 950];
+
+    static ZipNameDecoder() => Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+
+    /// <summary>시스템 ANSI 코드 페이지. 알 수 없으면 0.</summary>
+    public static int SystemCodePage => CodePagesEncodingProvider.Instance.GetEncoding(0)?.CodePage ?? 0;
+
+    /// <summary>모든 이름을 풀어내는 인코딩이 없으면 null.</summary>
+    public static string[]? TryDecodeAll(IReadOnlyList<byte[]> rawNames, int systemCodePage)
+    {
+        foreach (var codePage in Candidates(systemCodePage))
+        {
+            try
+            {
+                var encoding = Encoding.GetEncoding(codePage, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
+                return rawNames.Select(encoding.GetString).ToArray();
+            }
+            catch (ArgumentException) { } // DecoderFallbackException 포함: 이 인코딩의 이름이 아니다
+            catch (NotSupportedException) { }
+        }
+        return null;
+    }
+
+    private static IEnumerable<int> Candidates(int systemCodePage)
+    {
+        yield return Utf8CodePage;
+        var systemIsCjk = CommonLegacyCodePages.Contains(systemCodePage);
+        if (systemIsCjk) yield return systemCodePage;
+        foreach (var codePage in CommonLegacyCodePages)
+            if (codePage != systemCodePage) yield return codePage;
+        if (!systemIsCjk && systemCodePage > 0 && systemCodePage != Utf8CodePage) yield return systemCodePage;
+    }
+}
+
 /// <summary>System.IO.Compression 기반 ZIP reader. entry 단위 streaming, 전체 읽기 시 CRC 확인.</summary>
 public sealed class ZipArchiveReader : IArchiveReader
 {
@@ -176,20 +219,25 @@ public sealed class ZipArchiveReader : IArchiveReader
     private readonly Dictionary<string, (int Index, ArchiveEntryInfo Info)> _byPath = new(StringComparer.Ordinal);
     private readonly ArchiveHandlePool<Handle> _pool;
 
-    public ZipArchiveReader(string path)
+    public ZipArchiveReader(string path) : this(path, ZipNameDecoder.SystemCodePage) { }
+
+    internal ZipArchiveReader(string path, int systemCodePage)
     {
         SourcePath = path;
         var first = OpenHandle(path);
         try
         {
             var entries = first.Zip.Entries;
+            var names = ResolveNames(path, entries, systemCodePage);
             var list = new List<ArchiveEntryInfo>(entries.Count);
             for (var i = 0; i < entries.Count; i++)
             {
                 var e = entries[i];
-                var p = ArchiveSniffer.NormalizeEntryPath(e.FullName);
+                var p = ArchiveSniffer.NormalizeEntryPath(names[i]);
                 if (p.Length == 0 || p.EndsWith('/')) continue;
                 if (IsSymlink(e)) continue;
+                // 복원하지 못한 이름은 대체 문자로 같아질 수 있다. 쪽을 잃지 않게 이름을 구분한다(entry는 위치로 찾는다).
+                if (p.Contains('\uFFFD') && _byPath.ContainsKey(p)) p = UniquePath(p);
                 var info = new ArchiveEntryInfo(p, e.Length, e.LastWriteTime, e.IsEncrypted, e.Crc32);
                 if (!_byPath.TryAdd(p, (i, info))) continue;
                 list.Add(info);
@@ -204,12 +252,49 @@ public sealed class ZipArchiveReader : IArchiveReader
         _pool = new ArchiveHandlePool<Handle>(first, () => OpenHandle(path));
     }
 
-    private static Handle OpenHandle(string path)
+    /// <summary>
+    /// 각 entry의 표시 이름. UTF-8 표시가 있거나 ASCII인 이름은 그대로 둔다.
+    /// ZipArchiveEntry는 표시 비트를 알려 주지 않으므로 Latin1로 중앙 디렉터리를 한 번 더 읽는다:
+    /// 두 번의 해석이 다른 entry가 표시 없는 비ASCII 이름이고, Latin1 결과가 곧 원래 바이트다.
+    /// </summary>
+    private static string[] ResolveNames(string path, IReadOnlyList<ZipArchiveEntry> entries, int systemCodePage)
+    {
+        var names = entries.Select(e => e.FullName).ToArray();
+        if (names.All(n => Ascii.IsValid(n))) return names;
+
+        using var latin1 = OpenHandle(path, Encoding.Latin1);
+        var rawEntries = latin1.Zip.Entries;
+        if (rawEntries.Count != names.Length) return names;
+        var unflagged = new List<int>();
+        for (var i = 0; i < names.Length; i++)
+            if (!string.Equals(rawEntries[i].FullName, names[i], StringComparison.Ordinal)) unflagged.Add(i);
+        if (unflagged.Count == 0) return names;
+
+        var decoded = ZipNameDecoder.TryDecodeAll(unflagged.Select(i => Encoding.Latin1.GetBytes(rawEntries[i].FullName)).ToList(), systemCodePage);
+        if (decoded is null) return names;
+        for (var i = 0; i < unflagged.Count; i++) names[unflagged[i]] = decoded[i];
+        return names;
+    }
+
+    private string UniquePath(string path)
+    {
+        var extension = System.IO.Path.GetExtension(path);
+        var stem = path[..^extension.Length];
+        for (var n = 2; ; n++)
+        {
+            var candidate = $"{stem}~{n}{extension}";
+            if (!_byPath.ContainsKey(candidate)) return candidate;
+        }
+    }
+
+    private static Handle OpenHandle(string path, Encoding? entryNameEncoding = null)
     {
         var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 64 * 1024, FileOptions.RandomAccess);
         try
         {
-            return new Handle(stream, new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: false));
+            var zip = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: false, entryNameEncoding);
+            _ = zip.Entries; // 중앙 디렉터리는 처음 읽을 때 해석된다. 손상은 여기서 Corrupt로 바꾼다.
+            return new Handle(stream, zip);
         }
         catch (InvalidDataException ex)
         {
@@ -230,6 +315,9 @@ public sealed class ZipArchiveReader : IArchiveReader
         return mode == 0xA000;
     }
 
+    /// <summary>쪽 하나를 메모리로 읽을 때의 상한. 테스트에서는 작은 값을 준다.</summary>
+    internal long MaxEntryBytes { get; init; } = ExtractionLimits.DefaultMaxEntryBytes;
+
     public string SourcePath { get; }
     public ArchiveFormat Format => ArchiveFormat.Zip;
     public bool IsSolid => false;
@@ -247,17 +335,18 @@ public sealed class ZipArchiveReader : IArchiveReader
             if (entry.IsEncrypted) throw new BookOpenException(OpenErrorKind.Encrypted, Loc.T("Password-protected archives are not supported."));
             try
             {
+                ExtractionLimits.CheckEntrySize(entry.Length, MaxEntryBytes);
                 using var s = entry.Open();
                 var buffer = new byte[entry.Length];
                 var read = await s.ReadAtLeastAsync(buffer, buffer.Length, throwOnEndOfStream: false, cancellationToken).ConfigureAwait(false);
                 if (read != buffer.Length) throw new InvalidDataException("Truncated entry");
                 if (Crc32.Compute(buffer) != entry.Crc32)
-                    throw new BookOpenException(OpenErrorKind.Corrupt, Loc.T("The archive is damaged: %@", entry.Name));
+                    throw new BookOpenException(OpenErrorKind.Corrupt, Loc.T("The archive is damaged: %@", System.IO.Path.GetFileName(path)));
                 return buffer;
             }
             catch (InvalidDataException ex)
             {
-                throw new BookOpenException(OpenErrorKind.Corrupt, Loc.T("The archive is damaged: %@", entry.Name), ex);
+                throw new BookOpenException(OpenErrorKind.Corrupt, Loc.T("The archive is damaged: %@", System.IO.Path.GetFileName(path)), ex);
             }
         }
         finally
@@ -283,7 +372,7 @@ public sealed class ZipArchiveReader : IArchiveReader
             }
             catch (InvalidDataException ex)
             {
-                throw new BookOpenException(OpenErrorKind.Corrupt, Loc.T("The archive is damaged: %@", entry.Name), ex);
+                throw new BookOpenException(OpenErrorKind.Corrupt, Loc.T("The archive is damaged: %@", System.IO.Path.GetFileName(path)), ex);
             }
         }
         finally
@@ -307,11 +396,11 @@ public sealed class ZipArchiveReader : IArchiveReader
                     using var s = entry.Open();
                     using var crc = new Crc32Stream(s, info.Crc32);
                     visitor(info, crc);
-                    crc.DrainAndVerify(entry.Name);
+                    crc.DrainAndVerify(System.IO.Path.GetFileName(info.Path));
                 }
                 catch (InvalidDataException ex)
                 {
-                    throw new BookOpenException(OpenErrorKind.Corrupt, Loc.T("The archive is damaged: %@", entry.Name), ex);
+                    throw new BookOpenException(OpenErrorKind.Corrupt, Loc.T("The archive is damaged: %@", System.IO.Path.GetFileName(info.Path)), ex);
                 }
             }
         }
@@ -402,6 +491,9 @@ public sealed class RarArchiveReader : IArchiveReader
         return false;
     }
 
+    /// <summary>쪽 하나를 메모리로 읽을 때의 상한. 테스트에서는 작은 값을 준다.</summary>
+    internal long MaxEntryBytes { get; init; } = ExtractionLimits.DefaultMaxEntryBytes;
+
     public string SourcePath { get; }
     public ArchiveFormat Format => ArchiveFormat.Rar;
     public bool IsSolid { get; }
@@ -409,7 +501,19 @@ public sealed class RarArchiveReader : IArchiveReader
 
     public ArchiveEntryInfo? Find(string path) => _byPath.TryGetValue(path, out var e) ? e.Info : null;
 
-    private static Handle OpenHandle(string path) => new(RarArchive.OpenArchive(path, new ReaderOptions { LookForHeader = false }));
+    private static Handle OpenHandle(string path)
+    {
+        var archive = RarArchive.OpenArchive(path, new ReaderOptions { LookForHeader = false });
+        try
+        {
+            return new Handle(archive);
+        }
+        catch
+        {
+            archive.Dispose(); // 헤더가 깨져 entry 목록을 못 읽어도 파일 핸들을 남기지 않는다
+            throw;
+        }
+    }
 
     public Task<byte[]> ReadEntryAsync(string path, CancellationToken cancellationToken)
         => ReadAsync(path, long.MaxValue, cancellationToken);
@@ -482,6 +586,7 @@ public sealed class RarArchiveReader : IArchiveReader
     /// </summary>
     private byte[] ReadCore(IArchiveEntry entry, string path, long maxBytes, CancellationToken cancellationToken)
     {
+        if (maxBytes > MaxEntryBytes) ExtractionLimits.CheckEntrySize(entry.Size, MaxEntryBytes);
         using var ms = new MemoryStream(entry.Size is > 0 and < int.MaxValue ? (int)Math.Min(entry.Size, maxBytes) : 0);
         if (!IsSolid)
         {
@@ -521,7 +626,7 @@ public sealed class RarArchiveReader : IArchiveReader
         }
     }
 
-    private static void CopyWithCancel(Stream source, Stream destination, long maxBytes, CancellationToken cancellationToken)
+    private void CopyWithCancel(Stream source, Stream destination, long maxBytes, CancellationToken cancellationToken)
     {
         var buffer = new byte[81920];
         long total = 0;
@@ -531,6 +636,8 @@ public sealed class RarArchiveReader : IArchiveReader
             var want = (int)Math.Min(buffer.Length, maxBytes - total);
             var n = source.Read(buffer, 0, want);
             if (n <= 0) break;
+            // 선언 크기와 달리 실제 데이터가 더 길어도 상한을 넘겨 쌓지 않는다
+            ExtractionLimits.CheckEntrySize(total + n, MaxEntryBytes);
             destination.Write(buffer, 0, n);
             total += n;
         }

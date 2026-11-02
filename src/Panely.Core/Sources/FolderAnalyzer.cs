@@ -16,6 +16,8 @@ public sealed record FolderAnalysis(string Path, IReadOnlyList<FileInfo> Images,
 /// <summary>폴더/겉포장/시리즈 결정(04-files.md).</summary>
 public static class FolderAnalyzer
 {
+    private const int MaxDescent = 64;
+
     public static NaturalComparer Comparer => new(Loc.Culture);
 
     /// <summary>숨김·시스템 속성, 점 이름, __MACOSX, ._* 제외.</summary>
@@ -30,7 +32,12 @@ public static class FolderAnalyzer
         catch (IOException) { return true; }
     }
 
-    public static FolderAnalysis Analyze(string folder)
+    /// <param name="folder">분석할 폴더.</param>
+    /// <param name="expandedOnly">
+    /// 중첩 해제 캐시 안: 남아 있는 아카이브 파일은 펼치지 못한 것(깨짐·암호·깊이 한도)이라 권이 아니고,
+    /// 쪽을 찾을 수 없는 하위 폴더도 권이 아니다.
+    /// </param>
+    public static FolderAnalysis Analyze(string folder, bool expandedOnly = false)
     {
         var dir = new DirectoryInfo(folder);
         var images = new List<FileInfo>();
@@ -41,13 +48,14 @@ public static class FolderAnalyzer
             if (info is DirectoryInfo)
             {
                 if (info.Name.StartsWith(".panely-", StringComparison.Ordinal)) continue;
+                if (expandedOnly && !ContainsPages((DirectoryInfo)info, 0)) continue;
                 children.Add(info.FullName);
             }
             else if (SupportedFormats.IsImage(info.Name))
             {
                 images.Add((FileInfo)info);
             }
-            else if (SupportedFormats.IsArchive(info.Name))
+            else if (!expandedOnly && SupportedFormats.IsArchive(info.Name))
             {
                 children.Add(info.FullName);
             }
@@ -56,6 +64,20 @@ public static class FolderAnalyzer
         images.Sort((a, b) => cmp.Compare(a.Name, b.Name));
         children.Sort((a, b) => cmp.Compare(Path.GetFileName(a), Path.GetFileName(b)));
         return new FolderAnalysis(folder, images, children);
+    }
+
+    /// <summary>폴더 아래 어딘가에 쪽이 있는지. 이미지를 만나면 바로 끝낸다.</summary>
+    private static bool ContainsPages(DirectoryInfo directory, int depth)
+    {
+        if (depth >= MaxDescent) return false;
+        var subdirectories = new List<DirectoryInfo>();
+        foreach (var info in directory.EnumerateFileSystemInfos())
+        {
+            if (IsHidden(info)) continue;
+            if (info is DirectoryInfo sub) subdirectories.Add(sub);
+            else if (SupportedFormats.IsImage(info.Name)) return true;
+        }
+        return subdirectories.Exists(sub => ContainsPages(sub, depth + 1));
     }
 
     /// <summary>링크를 따라간 실제 경로(루프 방지 방문 집합용).</summary>
@@ -90,19 +112,19 @@ public static class FolderAnalyzer
     /// 직접 이미지가 있으면 그 폴더가 책. 없으면 첫 하위 항목으로 내려가며 반복.
     /// 하위 항목 2개 이상은 시리즈 레벨(더 안쪽 다권 목록이 더 구체적), 1개는 겉포장.
     /// </summary>
-    public static Resolution Resolve(string start, HashSet<string>? visited = null, CancellationToken cancellationToken = default)
+    public static Resolution Resolve(string start, HashSet<string>? visited = null, bool expandedOnly = false, CancellationToken cancellationToken = default)
     {
         visited ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         IReadOnlyList<string>? series = null;
         string? seriesDir = null;
         string? seriesEntry = null;
         var current = start;
-        for (var guard = 0; guard < 64; guard++)
+        for (var guard = 0; guard < MaxDescent; guard++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (!visited.Add(CanonicalDirectory(current)))
                 throw new BookOpenException(OpenErrorKind.Empty, Loc.T("Folder is empty or has no supported content"));
-            var analysis = Analyze(current);
+            var analysis = Analyze(current, expandedOnly);
             if (analysis.HasDirectImages) return new Resolution(current, false, series, seriesDir, seriesEntry) { BookAnalysis = analysis };
             if (analysis.Children.Count == 0)
                 throw new BookOpenException(OpenErrorKind.Empty, Loc.T("Folder is empty or has no supported content"));
@@ -123,7 +145,7 @@ public static class FolderAnalyzer
     /// 직접 연 책(또는 권 항목)의 sibling 목록: 부모의 하위 폴더+아카이브.
     /// 부모가 겉포장(자식 1개)이면 최대 2단계까지 올라가 가장 가까운 다권 레벨을 쓴다.
     /// </summary>
-    public static (IReadOnlyList<string> Entries, string Directory, string Entry) Siblings(string bookOrEntryPath, string? stopAt = null)
+    public static (IReadOnlyList<string> Entries, string Directory, string Entry) Siblings(string bookOrEntryPath, string? stopAt = null, bool expandedOnly = false)
     {
         var entry = bookOrEntryPath.TrimEnd('\\');
         var parent = Path.GetDirectoryName(entry);
@@ -133,7 +155,7 @@ public static class FolderAnalyzer
         {
             if (stopAt is not null && !IsUnderOrEqual(parent, stopAt)) break;
             FolderAnalysis analysis;
-            try { analysis = Analyze(parent); }
+            try { analysis = Analyze(parent, expandedOnly); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { break; }
             if (analysis.Children.Count >= 2)
             {

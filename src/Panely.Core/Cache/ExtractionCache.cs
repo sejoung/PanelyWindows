@@ -133,13 +133,24 @@ public sealed class ExtractionCache : IExtractionCache
             }
 
             CacheLease lease;
+            bool shared;
             lock (_gate)
             {
                 var dir = EntryDir(key);
-                if (Directory.Exists(dir)) TryDeleteDirectory(dir); // 불완전한 이전 entry
-                Directory.Move(staging, dir);
+                // entry.json을 잠깐 못 읽어 여기까지 왔을 수 있다. 다른 책이 읽는 중인 entry는 지우지 않고 함께 쓴다(같은 key는 같은 내용).
+                shared = _leases.ContainsKey(key) && Directory.Exists(Path.Combine(dir, "content"));
+                if (!shared)
+                {
+                    if (Directory.Exists(dir)) TryDeleteDirectory(dir); // 불완전한 이전 entry
+                    Directory.Move(staging, dir);
+                }
                 AddLease(key);
                 lease = new CacheLease(this, key, Path.Combine(dir, "content"));
+            }
+            if (shared)
+            {
+                TryDeleteDirectory(staging);
+                return lease;
             }
             _diagnostics.Log(Domain.Model.LogLevel.Info, LogCategory.Cache, $"Extraction cache entry published ({bytes} bytes)");
             Enforce();
@@ -225,7 +236,17 @@ public sealed class ExtractionCache : IExtractionCache
             // meta 없는 entry는 미완료로 간주
             foreach (var dir in Directory.GetDirectories(_entriesDir))
             {
-                if (ReadMeta(dir) is null) TryDeleteDirectory(dir);
+                // 잠깐 못 읽는 것은 미완료가 아니다
+                if (ReadMeta(dir, out var unreadable) is not null || unreadable) continue;
+                string? detached;
+                lock (_gate)
+                {
+                    var key = Path.GetFileName(dir);
+                    if (_leases.ContainsKey(key)) continue;
+                    if (_keyLocks.TryGetValue(key, out var l) && l.CurrentCount == 0) continue;
+                    detached = DetachEntry(key);
+                }
+                if (detached is not null) TryDeleteDirectory(detached);
             }
             // 이전 형식 버전 폴더
             var parent = Path.GetDirectoryName(Path.GetDirectoryName(_entriesDir)!)!;
@@ -322,16 +343,26 @@ public sealed class ExtractionCache : IExtractionCache
         }
     }
 
-    private static EntryMeta? ReadMeta(string dir)
+    private static EntryMeta? ReadMeta(string dir) => ReadMeta(dir, out _);
+
+    /// <param name="dir">entry 폴더.</param>
+    /// <param name="unreadable">entry.json이 있는데 입출력 오류로 읽지 못했으면 true(내용은 멀쩡할 수 있다).</param>
+    private static EntryMeta? ReadMeta(string dir, out bool unreadable)
     {
+        unreadable = false;
         try
         {
             var file = Path.Combine(dir, "entry.json");
             if (!File.Exists(file)) return null;
             return JsonSerializer.Deserialize<EntryMeta>(File.ReadAllText(file));
         }
-        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        catch (JsonException)
         {
+            return null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            unreadable = true;
             return null;
         }
     }

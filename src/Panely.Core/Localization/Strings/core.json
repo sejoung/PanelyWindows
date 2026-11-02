@@ -8,6 +8,7 @@
   "English": { "en": "English", "ko": "영어" },
   "Open a folder or comic archive to start reading.": { "en": "Open a folder or comic archive to start reading.", "ko": "폴더나 만화 압축 파일을 열어 읽기를 시작하세요." },
   "This book changed on disk.": { "en": "This book changed on disk.", "ko": "디스크에서 이 책이 변경되었습니다." },
+  "Panely is already running but isn't responding. Close it and try again.": { "en": "Panely is already running but isn't responding. Close it and try again.", "ko": "Panely가 이미 실행 중이지만 응답하지 않습니다. 닫은 뒤 다시 시도하세요." },
   "Couldn't read this page.": { "en": "Couldn't read this page.", "ko": "이 페이지를 읽을 수 없습니다." },
   "Download the {0} → {1} language pack.": { "en": "Download the %1$@ → %2$@ language pack.", "ko": "%1$@ → %2$@ 언어팩을 다운로드하세요." },
   "This model can't run on this PC: %@": { "en": "This model can't run on this PC: %@", "ko": "이 PC에서 모델을 실행할 수 없습니다: %@" },

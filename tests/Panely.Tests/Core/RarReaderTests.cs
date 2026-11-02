@@ -74,6 +74,29 @@ public class RarReaderTests
             Assert.True(File.Exists(System.IO.Path.Combine(dest, EntryPathGuard.Sanitize(e.Path)!.Replace('/', '\\'))), e.Path);
     }
 
+    [Theory]
+    [InlineData("Rar5.rar")]
+    [InlineData("Rar5.solid.rar")]
+    public async Task EntryAboveCap_IsExtractionLimit_PrefixStillWorks(string name)
+    {
+        using var reader = new RarArchiveReader(Fixture(name)) { MaxEntryBytes = 1 };
+        var entry = reader.Entries.First(e => e.Size > 1);
+        var ex = await Assert.ThrowsAsync<BookOpenException>(() => reader.ReadEntryAsync(entry.Path, CancellationToken.None));
+        Assert.Equal(OpenErrorKind.ExtractionLimit, ex.Kind);
+        Assert.Single(await reader.ReadPrefixAsync(entry.Path, 1, CancellationToken.None));
+    }
+
+    [Fact]
+    public void FailedOpen_ReleasesTheFile()
+    {
+        using var t = new TempDir();
+        var copy = t.P("enc.rar");
+        File.Copy(Fixture("Rar.encrypted_filesAndHeader.rar"), copy);
+        Assert.Throws<BookOpenException>(() => new RarArchiveReader(copy));
+        // 핸들이 남아 있으면 공유 없이 열 수 없다
+        using var exclusive = new FileStream(copy, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+    }
+
     [Fact]
     public void HeaderEncryptedRar_IsEncryptedError()
     {

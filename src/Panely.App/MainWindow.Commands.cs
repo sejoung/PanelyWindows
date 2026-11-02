@@ -124,12 +124,21 @@ public partial class MainWindow
 
     private async Task OpenImageAsync(string folder, string fileName)
     {
-        await OpenRequestAsync(new OpenRequest(folder, null, null, OpenIntent.Normal));
-        if (_session.Book is { } book)
-        {
-            var index = book.Pages.ToList().FindIndex(p => string.Equals(p.FileName, fileName, StringComparison.OrdinalIgnoreCase));
-            if (index >= 0) _session.Jump(index);
-        }
+        var opened = await OpenRequestAsync(new OpenRequest(folder, null, null, OpenIntent.Normal));
+        var book = _session.Book;
+        if (ImagePageToJump(opened, book?.LibraryPath, book?.Pages, folder, fileName) is { } index) _session.Jump(index);
+    }
+
+    /// <summary>
+    /// 이 요청이 그 폴더를 열었을 때만 고른 이미지의 쪽을 돌려준다. 취소·실패·대체된 열기에서 남아 있는 이전 책을
+    /// 이동시키면 그 위치가 진행으로 저장되므로 null이다.
+    /// </summary>
+    internal static int? ImagePageToJump(bool opened, string? bookPath, IReadOnlyList<PageEntry>? pages, string folder, string fileName)
+    {
+        if (!opened || bookPath is null || pages is null || !PathScope.IsSame(bookPath, folder)) return null;
+        for (var i = 0; i < pages.Count; i++)
+            if (string.Equals(pages[i].FileName, fileName, StringComparison.OrdinalIgnoreCase)) return i;
+        return null;
     }
 
     private void ShowOpenFolderDialog()

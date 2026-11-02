@@ -52,6 +52,64 @@ public class LibraryTests
     }
 
     [Fact]
+    public async Task BusyFolder_StillFiresWithinMaxDelay()
+    {
+        // 모든 변경의 부모가 같아도 첫 변경 시각을 다시 잡지 않아야 MaxDelay가 동작한다
+        using var t = new TempDir();
+        var diag = new DiagnosticsService(new AppPaths(t.P("appdata")));
+        using var service = new LibraryService(diag, TimeSpan.FromSeconds(30), t.P("appdata"), maxDelay: TimeSpan.FromMilliseconds(300));
+        var fired = new TaskCompletionSource<IReadOnlyList<string>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        service.DirectoriesChanged += (_, dirs) => fired.TrySetResult(dirs);
+        service.SetRoot(t.Root, autoRefresh: false);
+
+        using var stop = new CancellationTokenSource();
+        var events = Task.Run(async () =>
+        {
+            for (var i = 0; !stop.IsCancellationRequested; i++)
+            {
+                service.OnEvent(t.P("busy", $"{i}.cbz"), null);
+                await Task.Delay(30);
+            }
+        });
+        try
+        {
+            var dirs = await fired.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.Equal(t.P("busy"), Assert.Single(dirs));
+        }
+        finally
+        {
+            stop.Cancel();
+            await events;
+        }
+    }
+
+    [Theory]
+    [InlineData(@"Z:\", @"Z:\")]
+    [InlineData(@"Z:\Comics\", @"Z:\Comics")]
+    [InlineData(@"Z:\Comics", @"Z:\Comics")]
+    public void SetRoot_KeepsTheDriveRootSeparator(string given, string expected)
+    {
+        using var t = new TempDir();
+        var diag = new DiagnosticsService(new AppPaths(t.P("appdata")));
+        using var service = new LibraryService(diag, TimeSpan.FromSeconds(1), t.P("appdata"));
+        service.SetRoot(given, autoRefresh: false);
+        Assert.Equal(expected, service.RootPath);
+    }
+
+    [Fact]
+    public async Task ChangeAtDriveRoot_ReportsTheRootItself()
+    {
+        using var t = new TempDir();
+        var diag = new DiagnosticsService(new AppPaths(t.P("appdata")));
+        using var service = new LibraryService(diag, TimeSpan.FromMilliseconds(20), t.P("appdata"));
+        var fired = new TaskCompletionSource<IReadOnlyList<string>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        service.DirectoriesChanged += (_, dirs) => fired.TrySetResult(dirs);
+        service.SetRoot(@"Z:\", autoRefresh: false);
+        service.OnEvent(@"Z:\a.cbz", null);
+        Assert.Equal(@"Z:\", Assert.Single(await fired.Task.WaitAsync(TimeSpan.FromSeconds(10))));
+    }
+
+    [Fact]
     public void IsRelevant_FiltersAppDataAndImages()
     {
         using var t = new TempDir();

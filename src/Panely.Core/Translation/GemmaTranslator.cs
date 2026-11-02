@@ -26,7 +26,7 @@ public sealed partial class GemmaTranslator : ITranslator, IIdleReleasable, IDis
     private static string? _device;
 
     private readonly ModelStore _store;
-    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly ModelGate _gate = new();
     private Runtime? _runtime;
 
     public GemmaTranslator(ModelStore store) => _store = store;
@@ -54,36 +54,70 @@ public sealed partial class GemmaTranslator : ITranslator, IIdleReleasable, IDis
         var capability = GetCapability(source, target);
         if (!capability.IsReady) throw new InvalidOperationException(capability.Reason);
         if (items.Count == 0) return [];
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _gate.EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             var runtime = _runtime ??= await Task.Run(LoadRuntime, cancellationToken).ConfigureAwait(false);
-            var texts = new Dictionary<int, string>();
-            try
-            {
-                var output = await Task.Run(() => runtime.Generate(BuildPrompt(items, context, source, target), MaxTokens(items), cancellationToken), cancellationToken).ConfigureAwait(false);
-                foreach (var (n, text) in ParseLines(output)) if (n >= 1 && n <= items.Count) texts[n] = text;
-                // 형식이 어긋나 빠진 줄은 한 줄씩 다시 묻는다
-                for (var n = 1; n <= items.Count; n++)
-                {
-                    if (texts.ContainsKey(n)) continue;
-                    var single = await Task.Run(() => runtime.Generate(BuildPrompt([items[n - 1]], context, source, target), MaxTokens([items[n - 1]]), cancellationToken), cancellationToken).ConfigureAwait(false);
-                    if (ParseLines(single).FirstOrDefault(p => p.Number == 1) is { Text: { } text }) texts[n] = text;
-                }
-            }
-            catch (OperationCanceledException) { throw; }
-            catch (Exception ex)
-            {
-                return items.Select(i => new TranslationResultItem(i.Id, null, ex.Message)).ToList();
-            }
-            // 끝까지 돌아오지 않은 줄은 빈 결과: 스케줄러가 "번역하지 못한 말풍선"으로 원문을 보인다(ADR 0001)
-            return items.Select((item, i) => new TranslationResultItem(item.Id, texts.TryGetValue(i + 1, out var t) ? Clean(t, target) : null)).ToList();
+            var (texts, errors) = await Task.Run(() => GenerateLines(items, part => runtime.Generate(BuildPrompt(part, context, source, target), MaxTokens(part), cancellationToken)), cancellationToken).ConfigureAwait(false);
+            // 끝까지 돌아오지 않은 줄은 빈 결과: 스케줄러가 "번역하지 못한 말풍선"으로 원문을 보인다(ADR 0001). 오류가 난 줄은 다시 시도할 대상이다.
+            return items.Select((item, i) => texts.TryGetValue(i + 1, out var t)
+                ? new TranslationResultItem(item.Id, Clean(t, target))
+                : new TranslationResultItem(item.Id, null, errors.GetValueOrDefault(i + 1))).ToList();
         }
         finally
         {
-            _gate.Release();
+            _gate.Exit();
         }
     }
+
+    /// <summary>
+    /// 묶음을 생성해 줄 번호(1부터)별 결과를 모은다. 컨텍스트를 넘는 묶음은 반으로 나눠 다시 묻고, 혼자서도 넘는 줄만 오류로 남긴다.
+    /// 형식이 어긋나 빠진 줄은 한 줄씩 다시 묻는다. 오류는 그 줄(또는 그 묶음)에만 남고 이미 받은 줄은 버리지 않는다.
+    /// </summary>
+    internal static (Dictionary<int, string> Texts, Dictionary<int, string> Errors) GenerateLines(IReadOnlyList<TranslationRequestItem> items, Func<IReadOnlyList<TranslationRequestItem>, string> generate)
+    {
+        var texts = new Dictionary<int, string>();
+        var errors = new Dictionary<int, string>();
+        Run(0, items.Count);
+        for (var n = 1; n <= items.Count; n++)
+        {
+            if (texts.ContainsKey(n) || errors.ContainsKey(n)) continue;
+            try
+            {
+                if (ParseLines(generate([items[n - 1]])).FirstOrDefault(p => p.Number == 1) is { Text: { } text }) texts[n] = text;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                errors[n] = ex.Message;
+            }
+        }
+        return (texts, errors);
+
+        void Run(int start, int count)
+        {
+            string output;
+            try
+            {
+                output = generate(items.Skip(start).Take(count).ToList());
+            }
+            catch (PromptTooLongException ex)
+            {
+                if (count == 1) { errors[start + 1] = ex.Message; return; }
+                Run(start, count / 2);
+                Run(start + count / 2, count - count / 2);
+                return;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                for (var n = start + 1; n <= start + count; n++) errors[n] = ex.Message;
+                return;
+            }
+            foreach (var (n, text) in ParseLines(output)) if (n >= 1 && n <= count) texts[start + n] = text;
+        }
+    }
+
+    /// <summary>프롬프트와 최대 출력이 모델 컨텍스트에 들어가지 않는다(입력을 줄이면 들어갈 수 있다).</summary>
+    internal sealed class PromptTooLongException(string message) : InvalidOperationException(message);
 
     /// <summary>
     /// 모델을 올리고 번역과 같은 모양의 짧은 프롬프트로 몇 토큰을 생성한다. GPU(Vulkan)는 첫 생성 때 셰이더를 준비하느라 20초가량 걸리므로,
@@ -92,7 +126,7 @@ public sealed partial class GemmaTranslator : ITranslator, IIdleReleasable, IDis
     public async Task PrepareAsync(CancellationToken cancellationToken)
     {
         if (_store.Find(ModelCatalog.TranslatorId) is not { } m || !_store.IsInstalled(m)) return;
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _gate.EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             if (_runtime is not null) return;
@@ -101,7 +135,7 @@ public sealed partial class GemmaTranslator : ITranslator, IIdleReleasable, IDis
         }
         finally
         {
-            _gate.Release();
+            _gate.Exit();
         }
     }
 
@@ -230,7 +264,7 @@ public sealed partial class GemmaTranslator : ITranslator, IIdleReleasable, IDis
 
     public async Task ReleaseIdleAsync(CancellationToken cancellationToken)
     {
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _gate.EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             _runtime?.Dispose();
@@ -238,16 +272,15 @@ public sealed partial class GemmaTranslator : ITranslator, IIdleReleasable, IDis
         }
         finally
         {
-            _gate.Release();
+            _gate.Exit();
         }
     }
 
-    public void Dispose()
+    public void Dispose() => _gate.Close(() =>
     {
         _runtime?.Dispose();
         _runtime = null;
-        _gate.Dispose();
-    }
+    });
 
     /// <summary>모델과 컨텍스트 하나. 요청마다 KV 캐시를 비우고 greedy로 생성한다.</summary>
     private sealed class Runtime(LLamaWeights weights, LLamaContext context) : IDisposable
@@ -257,7 +290,7 @@ public sealed partial class GemmaTranslator : ITranslator, IIdleReleasable, IDis
             context.NativeHandle.MemoryClear(true);
             var tokens = context.Tokenize(prompt, true, true);
             if (tokens.Length + maxTokens > context.ContextSize)
-                throw new InvalidOperationException($"Prompt too long for the model context ({tokens.Length} tokens).");
+                throw new PromptTooLongException($"Prompt too long for the model context ({tokens.Length} tokens).");
 
             var batch = new LLamaBatch();
             var position = 0;

@@ -38,7 +38,7 @@ public static class FileAssociation
             using var extKey = Registry.CurrentUser.CreateSubKey($@"Software\Classes\{ext}");
             using var openWith = extKey.CreateSubKey("OpenWithProgids");
             openWith.SetValue(ProgId, Array.Empty<byte>(), RegistryValueKind.None);
-            if (ComicExtensions.Contains(ext) && extKey.GetValue(null) is null)
+            if (ShouldClaimDefault(ext, extKey.GetValue(null) as string, MachineDefault(ext)))
                 extKey.SetValue(null, ProgId);
         }
         // 폴더 컨텍스트 메뉴 "Open in Panely"
@@ -50,6 +50,19 @@ public static class FileAssociation
             cmd.SetValue(null, $"\"{exe}\" \"%1\"");
         }
         NotifyShell();
+    }
+
+    /// <summary>
+    /// 기본 연결은 cbz/cbr에 사용자·시스템(HKLM) 어느 쪽에도 없을 때만 지정한다.
+    /// HKCU 기본값은 HKCR에서 HKLM을 가리므로, HKLM에만 등록된 다른 앱도 기본 연결로 존중해야 한다.
+    /// </summary>
+    internal static bool ShouldClaimDefault(string extension, string? userDefault, string? machineDefault)
+        => ComicExtensions.Contains(extension) && string.IsNullOrEmpty(userDefault) && string.IsNullOrEmpty(machineDefault);
+
+    private static string? MachineDefault(string extension)
+    {
+        using var key = Registry.LocalMachine.OpenSubKey($@"Software\Classes\{extension}");
+        return key?.GetValue(null) as string;
     }
 
     public static void Unregister()

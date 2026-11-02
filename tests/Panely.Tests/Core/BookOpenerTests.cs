@@ -257,6 +257,104 @@ public class BookOpenerTests
         Assert.Equal("Vol1.zip", fallback.Book.InnerPath);
     }
 
+    private static readonly byte[] CorruptArchive = [0x50, 0x4B, 0x03, 0x04, 9, 9, 9];
+
+    [Fact]
+    public async Task Nested_CorruptFirstVolume_OpensTheGoodOne()
+    {
+        using var env = new CoreEnv();
+        var outer = env.Temp.P("lib", "Box.cbz");
+        Zip(outer, [("1 bad.zip", CorruptArchive), ("2 good.cbz", ZipBytes(Pages("", 3)))]);
+
+        using var book = await Open(env, outer);
+        Assert.Equal(3, book.Pages.Count);
+        Assert.Equal("2 good.cbz", book.Book.InnerPath);
+        Assert.DoesNotContain(book.Volumes, v => v.InnerPath == "1 bad.zip");
+    }
+
+    [Fact]
+    public async Task Nested_CorruptMiddleVolume_IsNotInTheList_NextVolumeMoves()
+    {
+        using var env = new CoreEnv();
+        var outer = env.Temp.P("lib", "Box.cbz");
+        Zip(outer, [("1 v.cbz", ZipBytes(Pages("", 1))), ("2 bad.cbz", CorruptArchive), ("3 v.cbz", ZipBytes(Pages("", 2)))]);
+
+        using var first = await Open(env, outer);
+        Assert.Equal("1 v.cbz", first.Book.InnerPath);
+        Assert.Equal(new[] { "1 v.cbz", "3 v.cbz" }, first.Volumes.Select(v => v.InnerPath));
+
+        using var next = await env.Opener.OpenAsync(first.NextVolume!.ToRequest(OpenIntent.NextVolume), null, CancellationToken.None);
+        Assert.Equal("3 v.cbz", next.Book.InnerPath);
+        Assert.Equal(2, next.Pages.Count);
+        Assert.Equal(1, next.VolumeIndex);
+        Assert.Null(next.NextVolume);
+        Assert.Equal("1 v.cbz", next.PreviousVolume!.InnerPath);
+    }
+
+    [Fact]
+    public async Task Nested_FolderHoldingOnlyACorruptArchive_IsSkipped()
+    {
+        using var env = new CoreEnv();
+        var outer = env.Temp.P("lib", "Box.cbz");
+        Zip(outer, [("A/bad.zip", CorruptArchive), ("B/good.zip", ZipBytes(Pages("", 2)))]);
+
+        using var book = await Open(env, outer);
+        Assert.Equal(2, book.Pages.Count);
+        Assert.Equal("B/good.zip", book.Book.InnerPath);
+    }
+
+    [Fact]
+    public async Task Nested_OnlyCorruptArchives_IsEmptyError()
+    {
+        using var env = new CoreEnv();
+        var outer = env.Temp.P("lib", "Box.cbz");
+        Zip(outer, [("1 bad.zip", CorruptArchive), ("2 bad.zip", CorruptArchive)]);
+        var ex = await Assert.ThrowsAsync<BookOpenException>(() => Open(env, outer));
+        Assert.Equal(OpenErrorKind.Empty, ex.Kind);
+    }
+
+    [Theory]
+    [InlineData("2 bad.cbz", OpenIntent.NextVolume)]
+    [InlineData("gone.cbz", OpenIntent.NextVolume)]
+    [InlineData("gone.cbz", OpenIntent.PreviousVolume)]
+    [InlineData("gone.cbz", OpenIntent.TreeSelection)]
+    public async Task Nested_VolumeNavigationToAMissingInnerPath_IsAnError(string inner, OpenIntent intent)
+    {
+        using var env = new CoreEnv();
+        var outer = env.Temp.P("lib", "Box.cbz");
+        Zip(outer, [("1 v.cbz", ZipBytes(Pages("", 1))), ("2 bad.cbz", CorruptArchive), ("3 v.cbz", ZipBytes(Pages("", 2)))]);
+        var ex = await Assert.ThrowsAsync<BookOpenException>(() => Open(env, outer, inner, intent));
+        Assert.Equal(OpenErrorKind.InnerPathMissing, ex.Kind);
+    }
+
+    private static byte[] WithDamagedCentralDirectory(byte[] zip)
+    {
+        var copy = (byte[])zip.Clone();
+        var cd = FindSignature(copy, [0x50, 0x4B, 0x01, 0x02]);
+        copy.AsSpan(cd, 4).Clear(); // EOCD는 멀쩡하고 중앙 디렉터리만 깨졌다
+        return copy;
+    }
+
+    [Fact]
+    public async Task DamagedCentralDirectory_IsCorrupt()
+    {
+        using var env = new CoreEnv();
+        var path = env.Temp.P("bad.cbz");
+        File.WriteAllBytes(path, WithDamagedCentralDirectory(ZipBytes(Pages("", 2))));
+        var ex = await Assert.ThrowsAsync<BookOpenException>(() => Open(env, path));
+        Assert.Equal(OpenErrorKind.Corrupt, ex.Kind);
+    }
+
+    [Fact]
+    public async Task Nested_DamagedCentralDirectory_LeavesTheRestOfTheBookOpen()
+    {
+        using var env = new CoreEnv();
+        var outer = env.Temp.P("lib", "Box.cbz");
+        Zip(outer, [("1 bad.zip", WithDamagedCentralDirectory(ZipBytes(Pages("", 2)))), ("2 good.zip", ZipBytes(Pages("", 1)))]);
+        using var book = await Open(env, outer);
+        Assert.Equal("2 good.zip", book.Book.InnerPath);
+    }
+
     [Fact]
     public async Task FlatArchive_InnerFolderInnerPath()
     {

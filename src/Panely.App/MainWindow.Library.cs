@@ -71,10 +71,12 @@ public partial class MainWindow
     /// <summary>탐색기·두 번째 실행·IPC에서 온 열기. 마지막 명시 요청이 화면을 소유한다.</summary>
     public void OpenFromExternal(IReadOnlyList<string> paths)
     {
-        if (paths.Count == 0) return;
-        _explicitOpenSeen = true;
-        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        if (_closing) return;
+        // Normal로 두면 최대화·전체 화면이 풀리므로 최소화 전 상태로 되돌린다
+        if (WindowState == WindowState.Minimized) SystemCommands.RestoreWindow(this);
         Activate();
+        if (paths.Count == 0) return; // 경로 없는 두 번째 실행: 창만 앞으로
+        _explicitOpenSeen = true;
         _ = OpenPathAsync(paths[^1], OpenIntent.Normal);
     }
 
@@ -93,11 +95,13 @@ public partial class MainWindow
         await OpenRequestAsync(new OpenRequest(path, null, null, intent));
     }
 
-    private async Task OpenRequestAsync(OpenRequest request)
+    /// <summary>반환: 이 요청이 화면에 반영되었으면 true.</summary>
+    private async Task<bool> OpenRequestAsync(OpenRequest request)
     {
         if (request.Intent != OpenIntent.RestoreLibrary) _explicitOpenSeen = true;
-        await _session.OpenAsync(request);
+        var opened = await _session.OpenAsync(request);
         FocusReader();
+        return opened;
     }
 
     /// <summary>현재 루트 밖의 책을 열면 그 부모를 탐색 루트로 보여준다(기억하지 않음).</summary>
@@ -105,23 +109,10 @@ public partial class MainWindow
     {
         var root = _sidebar.RootPath;
         var path = book.LibraryPath;
-        if (root is not null && IsUnder(path, root)) return;
+        if (root is not null && PathScope.IsUnder(path, root)) return;
         var parent = Path.GetDirectoryName(path);
         if (parent is null) return;
         SetLibraryRoot(parent, remember: false);
-    }
-
-    private static bool IsUnder(string path, string root)
-    {
-        try
-        {
-            var r = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)) + Path.DirectorySeparatorChar;
-            return Path.GetFullPath(path).StartsWith(r, StringComparison.OrdinalIgnoreCase);
-        }
-        catch (Exception)
-        {
-            return false;
-        }
     }
 
     private void SetLibraryRoot(string folder, bool remember)
@@ -280,10 +271,7 @@ public partial class MainWindow
         if (book is null || index < 0 || index >= book.Pages.Count) return Task.FromResult<BitmapSource?>(null);
         if (!ReferenceEquals(_bookmarkThumbBook, book))
         {
-            _bookmarkThumbCts.Cancel();
-            _bookmarkThumbCts.Dispose();
-            _bookmarkThumbCts = new CancellationTokenSource();
-            _bookmarkThumbs.Clear();
+            ResetBookmarkThumbnails();
             _bookmarkThumbBook = book;
         }
         var page = book.Pages[index];
@@ -315,14 +303,24 @@ public partial class MainWindow
         return task;
     }
 
+    /// <summary>책이 닫히면(또는 바뀌면) 남은 썸네일 읽기를 취소하고 비트맵을 놓는다.</summary>
+    private void ResetBookmarkThumbnails()
+    {
+        _bookmarkThumbCts.Cancel();
+        _bookmarkThumbCts.Dispose();
+        _bookmarkThumbCts = new CancellationTokenSource();
+        _bookmarkThumbs.Clear();
+        _bookmarkThumbBook = null;
+    }
+
     /// <summary>앱 활성화 시 최근/이어보기 가용성을 백그라운드로 갱신(이동식 드라이브 분리 시 자동 삭제하지 않음).</summary>
     private void RefreshAvailability()
     {
         if (_availabilityRunning) return; // 창 전환을 반복해도 검사가 겹치지 않게
-        _availabilityRunning = true;
         var sources = _state.Recents.Select(r => _state.FindSource(r.SourceId)).Where(s => s is not null).Cast<SourceRef>()
             .Concat(_state.AllProgress.Keys.Select(k => BookKeys.TryParse(k, out var id, out _) ? _state.FindSource(id) : null).Where(s => s is not null).Cast<SourceRef>())
             .DistinctBy(s => s.Id).Take(200).ToList();
+        _availabilityRunning = true; // 위 계산이 실패해도 검사가 영구히 막히지 않게 목록을 만든 뒤에 표시한다
         _ = Task.Run(async () =>
         {
             var results = new Dictionary<Guid, SourceAvailability>();

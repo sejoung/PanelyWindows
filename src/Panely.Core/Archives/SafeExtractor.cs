@@ -13,8 +13,16 @@ public sealed record ExtractionLimits(long MaxTotalBytes, int MaxFileCount, int 
     /// <summary>Windows 결정: 원본에 없는 파일 수 상한. 대형 책 샘플 기준으로 넉넉히 정했다.</summary>
     public const int DefaultMaxFileCount = 100_000;
     public const int DefaultWalkDepth = 3;
+    /// <summary>쪽 하나를 메모리로 읽을 때의 상한(선언 크기는 믿을 수 없다). 어떤 그림보다도 넉넉한 값이다.</summary>
+    public const long DefaultMaxEntryBytes = 1024L * 1024 * 1024;
 
     public static ExtractionLimits Default { get; } = new(DefaultMaxTotalBytes, DefaultMaxFileCount, DefaultWalkDepth);
+
+    internal static void CheckEntrySize(long size, long maxBytes)
+    {
+        if (size > maxBytes)
+            throw new BookOpenException(OpenErrorKind.ExtractionLimit, Loc.T("Archive expanded past the safety limit (%lld MB).", maxBytes / (1024 * 1024)));
+    }
 }
 
 /// <summary>누적 해제량. overflow는 포화 덧셈으로 처리한다.</summary>
@@ -38,11 +46,14 @@ public sealed class ExtractionBudget(ExtractionLimits limits)
         if (projected > Limits.MaxTotalBytes) throw LimitError();
     }
 
-    /// <summary>실제 쓰기 중 한도 적용.</summary>
-    public void AddWritten(long bytes)
+    /// <summary>
+    /// 실제 쓰기 중 한도 적용. 내부 아카이브를 펼치는 중이면 곧 지워질 그 아카이브를 뺀 값으로 판단한다
+    /// (CheckDeclared·ReplaceArchive와 같은 식). 펼쳐지는 실제 바이트는 모두 세므로 폭탄은 여전히 여기서 멈춘다.
+    /// </summary>
+    public void AddWritten(long bytes, long replacedArchiveBytes = 0)
     {
         TotalBytes = SaturatingAdd(TotalBytes, bytes);
-        if (TotalBytes > Limits.MaxTotalBytes) throw LimitError();
+        if (SaturatingAdd(TotalBytes, -Math.Max(0, replacedArchiveBytes)) > Limits.MaxTotalBytes) throw LimitError();
     }
 
     public void AddFile()
@@ -183,7 +194,7 @@ public sealed class SafeExtractor(ExtractionLimits limits, Action<string>? warn 
                 while ((n = stream.Read(buffer, 0, buffer.Length)) > 0)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    budget.AddWritten(n);
+                    budget.AddWritten(n, replacedArchiveBytes);
                     output.Write(buffer, 0, n);
                 }
             }

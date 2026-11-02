@@ -55,14 +55,18 @@ public sealed class TranslationScheduler : IAsyncDisposable
     /// <summary>"언어팩 필요"로 멈춘 작업 중 이제 필요한 팩이 다 있는 것을 대기열에 다시 넣는다(사용자가 멈춘 작업은 그대로).</summary>
     private void ResumeJobsWaitingForPacks()
     {
+        // 공급자 확인은 팩 관리자의 잠금과 디스크를 쓴다. _gate를 쥔 채 부르면 설치 쪽과 잠금 순서가 엇갈려 교착될 수 있어 잠금 밖에서 한다.
+        List<(Job Job, string? Source)> waiting;
+        lock (_gate) waiting = _jobs.Values.Where(IsWaitingForPacks).Select(j => (j, j.Source)).ToList();
+        var ready = waiting.Where(w => w.Source is { } source ? _providers.Packs.GetCapability(source, w.Job.Target).IsReady : DetectionWaitingForPacks() is null).ToList();
+        if (ready.Count == 0) return;
         var changed = new List<TranslationJobInfo>();
         lock (_gate)
         {
-            foreach (var job in _jobs.Values)
+            foreach (var (job, source) in ready)
             {
-                if (job.Phase != TranslationPhase.Paused || job.Reason != TranslationStopReason.NeedsLanguageDownload || job.UserPaused || job.AutoPaused) continue;
-                var ready = job.Source is { } source ? _providers.Packs.GetCapability(source, job.Target).IsReady : DetectionWaitingForPacks() is null;
-                if (!ready) continue;
+                // 확인하는 사이 상태가 바뀌었으면 건드리지 않는다
+                if (!_jobs.ContainsValue(job) || !IsWaitingForPacks(job) || job.Source != source) continue;
                 job.Phase = TranslationPhase.Queued;
                 job.Reason = TranslationStopReason.None;
                 job.ReasonMessage = null;
@@ -73,6 +77,9 @@ public sealed class TranslationScheduler : IAsyncDisposable
         foreach (var c in changed) Raise(c);
         _signal.Release();
     }
+
+    private static bool IsWaitingForPacks(Job job) =>
+        job.Phase == TranslationPhase.Paused && job.Reason == TranslationStopReason.NeedsLanguageDownload && !job.UserPaused && !job.AutoPaused;
 
     /// <summary>
     /// 원문 언어를 감지하려면 글자 인식 팩이 있어야 한다. 읽을 수 있는 언어가 하나도 없고 받을 수 있는 팩이 있으면 그 상태를 돌려준다
@@ -134,75 +141,93 @@ public sealed class TranslationScheduler : IAsyncDisposable
         return set;
     }
 
+    /// <summary>이 대상 언어로 캐시에 결과가 하나라도 있는 원어(책 전체를 본다). 없으면 null.</summary>
+    public string? FindCachedSource(IReadOnlyList<PageEntry> pages, string target, TranslationScope scope)
+        => TranslationLanguages.All.Where(s => s != target).FirstOrDefault(s => CachedPages(pages, s, target, scope).Count > 0);
+
+    /// <summary>캐시에 남은 결과로 원어를 찾는다(언어쌍마다 앞 3쪽만 본다). 없으면 null.</summary>
+    public string? DiscoverSource(IReadOnlyList<PageEntry> pages, TranslationScope scope)
+    {
+        var probe = pages.Take(3).ToList();
+        foreach (var source in TranslationLanguages.All)
+            foreach (var target in TranslationLanguages.All.Where(t => t != source))
+                if (CachedPages(probe, source, target, scope).Count > 0) return source;
+        return null;
+    }
+
     // ───────────────────────── 제어 ─────────────────────────
 
     /// <summary>번역 시작/재개. 이미 있으면 사용자 pause를 풀고 대기열에 넣는다.</summary>
     public TranslationJobInfo Start(BookTarget book, string target, string? source, TranslationScope scope, int focusPage = 0, IEnumerable<int>? onlyPages = null)
     {
         TranslationJobInfo info;
-        lock (_gate)
-        {
-            var key = JobKey(book.BookKey, target);
-            if (!_jobs.TryGetValue(key, out var job) || job.Scope != scope)
-            {
-                if (job is not null) CancelJob(job);
-                job = new Job(book, target, scope) { Seq = ++_seq, Enqueued = DateTimeOffset.UtcNow };
-                _jobs[key] = job;
-            }
-            if (source is not null && job.Source != source)
-            {
-                job.Source = source;
-                job.Completed.Clear();
-                job.Plan = null;
-                job.StripBubbles.Clear();
-                job.CompletedBands.Clear();
-                job.StripEpoch++;
-                job.InFlight.Clear();
-            }
-            job.UserPaused = false;
-            job.Attempted.Clear();
-            job.AttemptedBands.Clear();
-            job.FocusPage = Math.Max(0, focusPage);
-            if (onlyPages is not null) { job.Only ??= []; job.Only.UnionWith(onlyPages); }
-            else job.Only = null;
-            if (job.Phase is TranslationPhase.Completed or TranslationPhase.Failed or TranslationPhase.Paused or TranslationPhase.Idle)
-            {
-                // 다시 시작하면 끝나지 못한 쪽을 실제로 다시 읽는다. band 상태는 작업 스레드가 다음 실행 시작 때 정리한다.
-                job.ResetUnfinished = true;
-                job.LastError = null;
-                job.Phase = TranslationPhase.Queued;
-                job.Reason = TranslationStopReason.None;
-                job.ReasonMessage = null;
-            }
-            job.AutoPaused = book.IsNestedCacheBook && _currentBook != book.BookKey;
-            if (job.AutoPaused) job.Phase = TranslationPhase.Paused;
-            info = Snapshot(job);
-        }
+        lock (_gate) info = Snapshot(StartCore(book, target, source, scope, focusPage, onlyPages));
         Raise(info);
         _signal.Release();
         return info;
     }
 
+    /// <summary>_gate 안에서 부른다.</summary>
+    private Job StartCore(BookTarget book, string target, string? source, TranslationScope scope, int focusPage, IEnumerable<int>? onlyPages)
+    {
+        var key = JobKey(book.BookKey, target);
+        if (!_jobs.TryGetValue(key, out var job) || job.Scope != scope)
+        {
+            if (job is not null) CancelJob(job);
+            job = new Job(book, target, scope) { Seq = ++_seq, Enqueued = DateTimeOffset.UtcNow };
+            _jobs[key] = job;
+        }
+        if (source is not null && job.Source != source)
+        {
+            job.Source = source;
+            job.Completed.Clear();
+            job.Plan = null;
+            job.StripBubbles.Clear();
+            job.CompletedBands.Clear();
+            job.StripEpoch++;
+            job.InFlight.Clear();
+            // 돌고 있는 worker는 옛 원어로 읽고 있다. 멈추면 실행 가능한 단계에 있으므로 새 원어로 처음부터 다시 돈다.
+            job.Cts?.Cancel();
+        }
+        job.UserPaused = false;
+        job.Attempted.Clear();
+        job.AttemptedBands.Clear();
+        job.FocusPage = Math.Max(0, focusPage);
+        if (onlyPages is not null) { job.Only ??= []; job.Only.UnionWith(onlyPages); }
+        else job.Only = null;
+        job.RunAgain = true;
+        if (job.Phase is TranslationPhase.Completed or TranslationPhase.Failed or TranslationPhase.Paused or TranslationPhase.Idle)
+        {
+            // 다시 시작하면 끝나지 못한 쪽을 실제로 다시 읽는다. band 상태는 작업 스레드가 다음 실행 시작 때 정리한다.
+            job.ResetUnfinished = true;
+            job.LastError = null;
+            job.Phase = TranslationPhase.Queued;
+            job.Reason = TranslationStopReason.None;
+            job.ReasonMessage = null;
+        }
+        job.AutoPaused = book.IsNestedCacheBook && _currentBook != book.BookKey;
+        if (job.AutoPaused) job.Phase = TranslationPhase.Paused;
+        return job;
+    }
+
     /// <summary>쪽 재번역(현재 방식으로 다시 읽기). 사용자 수정은 유지된다.</summary>
     public TranslationJobInfo Retranslate(BookTarget book, string target, string? source, TranslationScope scope, IReadOnlyCollection<int>? pages, int focusPage)
     {
-        bool existed;
-        lock (_gate) existed = _jobs.ContainsKey(JobKey(book.BookKey, target));
-        var info = Start(book, target, source, scope, focusPage, existed || pages is null ? null : pages);
+        TranslationJobInfo info;
+        // 시작과 재번역 표시를 한 잠금에서 한다. 나눠 하면 그 사이에 worker가 작업을 끝내 재번역이 묻힌다.
         lock (_gate)
         {
-            if (_jobs.TryGetValue(JobKey(book.BookKey, target), out var job))
-            {
-                job.ForceAll = pages is null;
-                if (pages is not null) { job.Forced.UnionWith(pages); job.Completed.ExceptWith(pages); }
-                else job.Completed.Clear();
-                job.Plan = null;
-                job.StripBubbles.Clear();
-                job.CompletedBands.Clear();
-                job.StripEpoch++;
-                job.InFlight.Clear();
-                info = Snapshot(job);
-            }
+            var existed = _jobs.ContainsKey(JobKey(book.BookKey, target));
+            var job = StartCore(book, target, source, scope, focusPage, existed || pages is null ? null : pages);
+            job.ForceAll = pages is null;
+            if (pages is not null) { job.Forced.UnionWith(pages); job.Completed.ExceptWith(pages); }
+            else job.Completed.Clear();
+            job.Plan = null;
+            job.StripBubbles.Clear();
+            job.CompletedBands.Clear();
+            job.StripEpoch++;
+            job.InFlight.Clear();
+            info = Snapshot(job);
         }
         Raise(info);
         _signal.Release();
@@ -354,9 +379,9 @@ public sealed class TranslationScheduler : IAsyncDisposable
             {
                 await RunJobAsync(job, cts.Token).ConfigureAwait(false);
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cts.IsCancellationRequested)
             {
-                // pause/stop/shutdown: 상태는 요청한 쪽에서 이미 정했다
+                // pause/stop/shutdown: 상태는 요청한 쪽에서 이미 정했다(worker는 일시정지를 덮어쓰지 않는다). 원어 변경이면 실행 가능한 단계에 있어 다시 돈다.
             }
             catch (Exception ex)
             {
@@ -418,19 +443,28 @@ public sealed class TranslationScheduler : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// worker가 진행 단계를 적는다. 그사이 일시정지가 왔으면 덮어쓰지 않는다. 덮어쓰면 UserPaused라 PickNext는 건너뛰는데
+    /// 단계는 실행 중으로 보여 UI가 "일시정지"만 내놓고 멈춘다. 판단과 쓰기가 같은 잠금 안이라 경합하지 않는다.
+    /// </summary>
+    private void SetWorkerPhase(Job job, TranslationPhase phase) => Update(job, j => { if (!j.UserPaused && !j.AutoPaused) j.Phase = phase; });
+
     private async Task RunJobAsync(Job job, CancellationToken ct)
     {
+        lock (_gate) job.RunAgain = false;
         if (job.Handle is null)
         {
-            Update(job, j => j.Phase = TranslationPhase.Preparing);
+            SetWorkerPhase(job, TranslationPhase.Preparing);
             var handle = await _books.OpenAsync(job.Book, ct).ConfigureAwait(false);
             lock (_gate)
             {
                 if (!_jobs.ContainsValue(job)) { handle.Dispose(); return; }
                 job.Handle = handle;
-                job.Total = job.Only?.Count ?? handle.Pages.Count;
+                // 쪽 지정 수는 Snapshot이 Only로 센다. 여기에 넣으면 Only를 푼 뒤 핸들이 열려 있는 동안 총 쪽 수가 틀린다.
+                job.Total = handle.Pages.Count;
             }
         }
+        ct.ThrowIfCancellationRequested();
         var book = job.Handle!;
 
         if (job.Source is null)
@@ -443,9 +477,11 @@ public sealed class TranslationScheduler : IAsyncDisposable
                     j.Reason = TranslationStopReason.NeedsLanguageDownload;
                     j.ReasonMessage = Loc.T("Download the language pack to read this book. Its language is detected after that.");
                 });
+                // 확인과 위 표시 사이에 설치가 끝났으면 알림을 이미 놓쳤다
+                ResumeJobsWaitingForPacks();
                 return;
             }
-            Update(job, j => j.Phase = TranslationPhase.DetectingLanguage);
+            SetWorkerPhase(job, TranslationPhase.DetectingLanguage);
             var (detected, readable) = await DetectSourceAsync(book, job.FocusPage, ct).ConfigureAwait(false);
             if (detected is null)
             {
@@ -457,7 +493,7 @@ public sealed class TranslationScheduler : IAsyncDisposable
                 });
                 return;
             }
-            Update(job, j => j.Source = detected);
+            Update(job, j => j.Source ??= detected);
         }
 
         var source = job.Source!;
@@ -489,19 +525,28 @@ public sealed class TranslationScheduler : IAsyncDisposable
                 }
                 j.ReasonMessage = capability.Reason;
             });
+            // 확인과 위 표시 사이에 설치가 끝났으면 알림을 이미 놓쳤다
+            ResumeJobsWaitingForPacks();
             return;
         }
 
-        // 이미 완료된 캐시를 먼저 반영
-        if (job.Completed.Count == 0)
+        // 이미 완료된 캐시를 먼저 반영하고, 완료로 알던 쪽이 캐시에서 사라졌으면(손상으로 지워짐 등) 다시 번역한다
+        var cached = CachedPages(book.Pages, source, job.Target, job.Scope);
+        Update(job, j =>
         {
-            var cached = CachedPages(book.Pages, source, job.Target, job.Scope);
-            if (!job.ForceAll) cached.ExceptWith(job.Forced); else cached.Clear();
-            Update(job, j => j.Completed.UnionWith(cached));
-        }
+            if (j.Source != source) return;
+            var lost = j.Completed.Where(p => !cached.Contains(p)).ToList();
+            if (lost.Count > 0)
+            {
+                j.Completed.ExceptWith(lost);
+                j.Attempted.ExceptWith(lost);
+                j.ResetUnfinished = true;
+            }
+            if (!j.ForceAll) j.Completed.UnionWith(cached.Where(p => !j.Forced.Contains(p)));
+        });
 
         job.FirstResult = false;
-        Update(job, j => j.Phase = TranslationPhase.Preparing);
+        SetWorkerPhase(job, TranslationPhase.Preparing);
         // 번역 모델 준비(GPU 첫 실행은 20초가량)를 첫 쪽 분석과 겹쳐 돌린다. 실패하면 첫 번역 때 다시 올리며 그 오류를 알린다.
         _ = _providers.Translator.PrepareAsync(ct).ContinueWith(t => _ = t.Exception, CancellationToken.None, TaskContinuationOptions.NotOnRanToCompletion, TaskScheduler.Default);
         if (job.Scope == TranslationScope.Strip) await RunStripAsync(job, book, source, ct).ConfigureAwait(false);
@@ -533,7 +578,7 @@ public sealed class TranslationScheduler : IAsyncDisposable
             ct).ConfigureAwait(false);
         if (yielded)
         {
-            Update(job, j => j.Phase = TranslationPhase.Queued);
+            SetWorkerPhase(job, TranslationPhase.Queued);
             return;
         }
         FinishJob(job, book.Pages.Count);
@@ -559,7 +604,12 @@ public sealed class TranslationScheduler : IAsyncDisposable
             var key = CacheKey(entry.PageId, source, job.Target, TranslationScope.Page);
             if (!forced && _cache.TryLoad(key) is { } cached)
             {
-                Update(job, j => { j.Completed.Add(page); j.Attempted.Add(page); j.InFlight.Remove(page); j.Processed++; });
+                Update(job, j =>
+                {
+                    if (j.Source == source) { j.Completed.Add(page); j.Attempted.Add(page); }
+                    j.InFlight.Remove(page);
+                    j.Processed++;
+                });
                 PageUpdated?.Invoke(this, new TranslationPageUpdate(book.BookKey, job.Target, page, cached));
             }
             else
@@ -603,8 +653,15 @@ public sealed class TranslationScheduler : IAsyncDisposable
     {
         var page = BuildPage(work, true);
         if (page.IsComplete && _cache.Store(work.Key, page, work.Generation))
-            Update(job, j => { j.Completed.Add(work.Page); j.Forced.Remove(work.Page); });
-        Update(job, j => { j.Attempted.Add(work.Page); j.InFlight.Remove(work.Page); j.Processed++; j.ProcessingTime += elapsed; });
+            Update(job, j => { if (j.Source == work.Key.Source) { j.Completed.Add(work.Page); j.Forced.Remove(work.Page); } });
+        Update(job, j =>
+        {
+            // 원어가 바뀐 뒤 끝난 이전 실행의 쪽은 시도한 것으로 치지 않는다. 치면 새 실행이 그 쪽을 건너뛰어 작업이 실패로 끝난다.
+            if (j.Source == work.Key.Source) j.Attempted.Add(work.Page);
+            j.InFlight.Remove(work.Page);
+            j.Processed++;
+            j.ProcessingTime += elapsed;
+        });
         PageUpdated?.Invoke(this, new TranslationPageUpdate(book.BookKey, job.Target, work.Page, page));
     }
 
@@ -614,6 +671,18 @@ public sealed class TranslationScheduler : IAsyncDisposable
         {
             var all = j.Only ?? Enumerable.Range(0, pageCount).ToHashSet();
             var missing = all.Count(p => !j.Completed.Contains(p));
+            if (missing > 0 && (j.UserPaused || j.AutoPaused))
+            {
+                // 취소가 관찰되기 전에 할 일이 끝났을 뿐이다. 일시정지로 둔다.
+                j.Phase = TranslationPhase.Paused;
+                return;
+            }
+            if (missing > 0 && j.RunAgain)
+            {
+                // 분석이 끝난 뒤 재번역·범위 확대가 왔다: 실패가 아니라 한 번 더 돈다
+                j.Phase = TranslationPhase.Queued;
+                return;
+            }
             j.Forced.Clear();
             j.ForceAll = false;
             if (missing == 0)
@@ -766,39 +835,51 @@ public sealed class TranslationScheduler : IAsyncDisposable
 
     private async Task RunStripAsync(Job job, OpenedBook book, string source, CancellationToken ct)
     {
-        if (job.Plan is null)
+        // 재번역은 도는 중에도 job.Plan을 비운다. 이 실행은 자기 plan을 끝까지 쓴다(쪽 치수는 재번역해도 같다).
+        var plan = job.Plan;
+        if (plan is null)
         {
             var sizes = new List<SizeD>(book.Pages.Count);
             foreach (var p in book.Pages) sizes.Add(await _pixels.GetSizeAsync(book, p, ct).ConfigureAwait(false));
-            job.Plan = StripPlan.Create(sizes);
+            plan = StripPlan.Create(sizes);
+            lock (_gate) job.Plan = plan;
         }
-        var plan = job.Plan;
         var revision = ProviderRevision;
+
+        // 이미 완료된 쪽의 캐시를 게시. 읽지 못한 쪽은 완료로 치지 않고 다시 번역한다.
+        List<int> done;
+        lock (_gate) done = job.Completed.ToList();
+        var lost = new List<int>();
+        foreach (var p in done)
+        {
+            if (_cache.TryLoad(CacheKey(book.Pages[p].PageId, source, job.Target, TranslationScope.Strip)) is { } c)
+                PageUpdated?.Invoke(this, new TranslationPageUpdate(book.BookKey, job.Target, p, c));
+            else lost.Add(p);
+        }
+
         lock (_gate)
         {
-            if (job.ResetUnfinished) ResetUnfinishedStrip(job);
+            if (lost.Count > 0)
+            {
+                job.Completed.ExceptWith(lost);
+                job.ResetUnfinished = true;
+            }
+            if (job.ResetUnfinished) ResetUnfinishedStrip(job, plan);
             job.ResetUnfinished = false;
             job.InFlight.Clear();
             // 지난 실행이 번역을 마치기 전에 멈춘 band의 풍선은 버린다. 그 band는 다시 읽으므로 남겨 두면 풍선이 겹친다.
             foreach (var list in job.StripBubbles.Values) list.RemoveAll(s => !job.CompletedBands.Contains(s.Band));
         }
 
-        // 이미 완료된 쪽의 캐시를 게시
-        foreach (var p in job.Completed.ToList())
-        {
-            if (_cache.TryLoad(CacheKey(book.Pages[p].PageId, source, job.Target, TranslationScope.Strip)) is { } c)
-                PageUpdated?.Invoke(this, new TranslationPageUpdate(book.BookKey, job.Target, p, c));
-        }
-
         var yielded = await RunPipelineAsync<BandWork>(
             (writer, token) => AnalyzeBandsAsync(job, book, plan, source, revision, writer, token),
             (reader, token) => TranslateQueuedAsync(job, reader, source, w => w.Slots,
-                (_, pages) => { foreach (var p in pages) PublishStripPage(job, book, p, source, revision, complete: false); },
+                (_, pages) => { foreach (var p in pages) PublishStripPage(job, book, plan, p, source, revision, complete: false); },
                 (w, elapsed) => FinishBand(job, book, plan, w, source, revision, elapsed), token),
             ct).ConfigureAwait(false);
         if (yielded)
         {
-            Update(job, j => j.Phase = TranslationPhase.Queued);
+            SetWorkerPhase(job, TranslationPhase.Queued);
             return;
         }
         FinishJob(job, book.Pages.Count);
@@ -861,7 +942,7 @@ public sealed class TranslationScheduler : IAsyncDisposable
                     touched.Add(page);
                 }
             }
-            foreach (var p in touched) PublishStripPage(job, book, p, source, revision, complete: false);
+            foreach (var p in touched) PublishStripPage(job, book, plan, p, source, revision, complete: false);
             await writer.WriteAsync(new BandWork(band, epoch, generation, slots), ct).ConfigureAwait(false);
             if (ShouldYield(job)) return true;
         }
@@ -884,7 +965,7 @@ public sealed class TranslationScheduler : IAsyncDisposable
         if (stale) return;
         foreach (var p in finished)
         {
-            var page = BuildStripPage(job, book, p, source, revision, complete: true);
+            var page = BuildStripPage(job, book, plan, p, source, revision, complete: true);
             if (!page.IsComplete) { PageUpdated?.Invoke(this, new TranslationPageUpdate(book.BookKey, job.Target, p, page)); continue; }
             var key = CacheKey(book.Pages[p].PageId, source, job.Target, TranslationScope.Strip);
             if (_cache.Store(key, page, work.Generation)) Update(job, j => { j.Completed.Add(p); j.Forced.Remove(p); });
@@ -897,20 +978,19 @@ public sealed class TranslationScheduler : IAsyncDisposable
     /// 그대로 두면 band가 이미 끝난 것으로 보여 다시 읽지 않고 곧바로 같은 실패로 끝난다.
     /// 빼낸 band가 걸친 다른 미완료 쪽도 자기 band가 모두 빠지므로 풍선이 중복되지 않는다.
     /// </summary>
-    private static void ResetUnfinishedStrip(Job job)
+    private static void ResetUnfinishedStrip(Job job, StripPlan plan)
     {
-        if (job.Plan is not { } plan) return;
         var unfinished = Enumerable.Range(0, plan.PageRects.Count).Where(p => !job.Completed.Contains(p)).ToHashSet();
         foreach (var band in plan.Bands)
             if (band.PageIndices.Any(unfinished.Contains)) job.CompletedBands.Remove(band.Index);
     }
 
-    private void PublishStripPage(Job job, OpenedBook book, int page, string source, string revision, bool complete)
-        => PageUpdated?.Invoke(this, new TranslationPageUpdate(book.BookKey, job.Target, page, BuildStripPage(job, book, page, source, revision, complete)));
+    private void PublishStripPage(Job job, OpenedBook book, StripPlan plan, int page, string source, string revision, bool complete)
+        => PageUpdated?.Invoke(this, new TranslationPageUpdate(book.BookKey, job.Target, page, BuildStripPage(job, book, plan, page, source, revision, complete)));
 
-    private TranslatedPage BuildStripPage(Job job, OpenedBook book, int page, string source, string revision, bool complete)
+    private TranslatedPage BuildStripPage(Job job, OpenedBook book, StripPlan plan, int page, string source, string revision, bool complete)
     {
-        var rect = job.Plan!.PageRects[page];
+        var rect = plan.PageRects[page];
         List<TranslatedBubble> bubbles;
         bool finished;
         lock (_gate)
@@ -1116,6 +1196,8 @@ public sealed class TranslationScheduler : IAsyncDisposable
         public HashSet<int> Forced { get; } = [];
         public bool ForceAll { get; set; }
         public HashSet<int>? Only { get; set; }
+        /// <summary>이번 실행이 시작된 뒤 Start·재번역이 왔다. 끝날 때 빠진 쪽이 있으면 실패가 아니라 한 번 더 돈다.</summary>
+        public bool RunAgain { get; set; }
         public int Total { get; set; }
         public bool UserPaused { get; set; }
         public bool AutoPaused { get; set; }

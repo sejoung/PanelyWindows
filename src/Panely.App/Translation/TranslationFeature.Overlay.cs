@@ -43,7 +43,7 @@ public sealed partial class TranslationFeature
         if ((w <= 0 || h <= 0) && _host?.GetPageSize(pageIndex) is { } size) { w = size.Width; h = size.Height; }
         if (w <= 0 || h <= 0) return null;
         var bubbles = EditResolver.Resolve(page?.Bubbles ?? [], edits, target,
-            index => _pendingRetranslations.Contains((entry.PageId, index, target)), pageComplete: page?.IsComplete ?? false);
+            index => _pendingRetranslations.Contains((entry.PageId, edits!.Bubbles[index].RecognizedSource, edits.Bubbles[index].Rect, target)), pageComplete: page?.IsComplete ?? false);
         return (page, bubbles, w, h);
     }
 
@@ -211,7 +211,12 @@ public sealed partial class TranslationFeature
         var scope = CurrentScope;
         var edits = Service.Edits.Get(entry.PageId, scope) ?? PageEditsEditor.Empty(entry.PageId, scope);
         int index;
-        if (bubble.IsAdded && bubble.EditIndex is { } ai) index = ai;
+        if (bubble.IsAdded)
+        {
+            // 팝오버·메뉴를 여는 동안 다른 추가 풍선이 지워졌을 수 있다
+            index = PageEditsEditor.FindAdded(edits, bubble.RecognizedSource, bubble.Rect);
+            if (index < 0) return;
+        }
         else (edits, index) = PageEditsEditor.Ensure(edits, bubble.RecognizedSource, bubble.Rect);
         Service.Edits.Save(op(edits, index));
         _host?.InvalidateOverlay();
@@ -243,9 +248,9 @@ public sealed partial class TranslationFeature
         foreach (var lang in languages)
         {
             var edits = Service.Edits.Get(entry.PageId, scope);
-            var index = bubble.IsAdded ? bubble.EditIndex ?? -1 : EditResolver.FindEditIndex(edits, bubble.RecognizedSource, bubble.Rect);
+            var index = FindEdit(edits, bubble);
             if (index < 0) return;
-            var key = (entry.PageId, index, lang);
+            var key = (entry.PageId, edits!.Bubbles[index].RecognizedSource, edits.Bubbles[index].Rect, lang);
             _pendingRetranslations.Add(key);
             _host?.InvalidateOverlay();
             try
@@ -254,8 +259,10 @@ public sealed partial class TranslationFeature
                 if (_book?.BookKey != bookKey || !result.TryGetValue("0", out var text)) continue;
                 var current = Service.Edits.Get(entry.PageId, scope);
                 if (current is null) continue;
-                var i = bubble.IsAdded ? index : EditResolver.FindEditIndex(current, bubble.RecognizedSource, bubble.Rect);
-                if (i < 0 || i >= current.Bubbles.Count || current.Bubbles[i].CorrectedSource is null && !current.Bubbles[i].IsAddedWithText()) continue;
+                // 번역하는 동안 풍선이 지워졌거나 원문을 다시 고쳤으면(그쪽 재번역이 따로 돈다) 이 결과는 버린다
+                var i = FindEdit(current, bubble);
+                if (i < 0 || current.Bubbles[i].CorrectedSource is null && !current.Bubbles[i].IsAddedWithText()) continue;
+                if (current.Bubbles[i].CorrectedSource is { } now && now != corrected) continue;
                 Service.Edits.Save(PageEditsEditor.SetRetranslation(current, i, lang, text));
             }
             catch (Exception ex)
@@ -270,6 +277,10 @@ public sealed partial class TranslationFeature
             }
         }
     }
+
+    private static int FindEdit(PageEdits? edits, DisplayBubble bubble) => bubble.IsAdded
+        ? PageEditsEditor.FindAdded(edits, bubble.RecognizedSource, bubble.Rect)
+        : EditResolver.FindEditIndex(edits, bubble.RecognizedSource, bubble.Rect);
 
     internal void SetHidden(int page, DisplayBubble bubble, bool hidden)
     {
@@ -288,11 +299,12 @@ public sealed partial class TranslationFeature
 
     internal void RemoveAdded(int page, DisplayBubble bubble)
     {
-        if (!bubble.IsAdded || bubble.EditIndex is not { } index || _book is null) return;
+        if (!bubble.IsAdded || _book is null) return;
         var entry = _book.Pages[page];
         var edits = Service.Edits.Get(entry.PageId, CurrentScope);
-        if (edits is null || index >= edits.Bubbles.Count) return;
-        Service.Edits.Save(PageEditsEditor.RemoveAt(edits, index));
+        var index = PageEditsEditor.FindAdded(edits, bubble.RecognizedSource, bubble.Rect);
+        if (index < 0) return;
+        Service.Edits.Save(PageEditsEditor.RemoveAt(edits!, index));
         _host?.InvalidateOverlay();
     }
 
@@ -339,7 +351,7 @@ public sealed partial class TranslationFeature
         }
         if (_book?.BookKey != book.BookKey) return;
         var edits = Service.Edits.Get(entry.PageId, scope) ?? PageEditsEditor.Empty(entry.PageId, scope);
-        (edits, var index) = PageEditsEditor.AddBalloon(edits, rect, text, new AddedBalloon(glyph, vertical, background));
+        (edits, _) = PageEditsEditor.AddBalloon(edits, rect, text, new AddedBalloon(glyph, vertical, background));
         Service.Edits.Save(edits);
         _host.InvalidateOverlay();
         if (text.Length == 0 || source is null || _visible is null)
@@ -348,13 +360,14 @@ public sealed partial class TranslationFeature
             return;
         }
         var target = _visible;
-        var key = (entry.PageId, index, target);
+        var key = (entry.PageId, text, rect, target);
         _pendingRetranslations.Add(key);
         try
         {
             var result = await Service.Scheduler.TranslateTextsAsync([new TranslationRequestItem("0", text)], source, target, CancellationToken.None);
-            if (result.TryGetValue("0", out var translated) && Service.Edits.Get(entry.PageId, scope) is { } current && index < current.Bubbles.Count)
-                Service.Edits.Save(PageEditsEditor.SetRetranslation(current, index, target, translated));
+            if (result.TryGetValue("0", out var translated) && Service.Edits.Get(entry.PageId, scope) is { } current
+                && PageEditsEditor.SetAddedRetranslation(current, text, rect, target, translated) is { } updated)
+                Service.Edits.Save(updated);
             _host.ShowNotice(Loc.T("Balloon added. It's translated now; click it to correct the text or remove it."), TimeSpan.FromSeconds(6));
         }
         catch (Exception ex)

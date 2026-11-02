@@ -141,8 +141,26 @@ public sealed class ModelStore
         }
     }
 
-    /// <summary>강제 종료 후 남은 staging 정리.</summary>
-    public void CleanupStaging() => TryDelete(Path.Combine(_root, ".staging"));
+    /// <summary>
+    /// 강제 종료 후 남은 staging을 치워 둔다(이름 변경이라 빠르다). 다운로드를 시작할 수 있게 되기 전에 부른다.
+    /// 그냥 백그라운드에서 지우면 그 사이 시작한 다운로드의 staging까지 지운다(ADR 0009 11번과 같은 경합).
+    /// </summary>
+    public void DetachStaleStaging()
+    {
+        var staging = Path.Combine(_root, ".staging");
+        if (!Directory.Exists(staging)) return;
+        try
+        {
+            var trash = Path.Combine(_root, ".trash");
+            Directory.CreateDirectory(trash);
+            Directory.Move(staging, Path.Combine(trash, $"staging-{Guid.NewGuid():N}"));
+        }
+        catch (IOException) { TryDelete(staging); }
+        catch (UnauthorizedAccessException) { TryDelete(staging); }
+    }
+
+    /// <summary>치워 둔 staging을 지운다. 오래 걸릴 수 있어 worker에서 호출할 수 있다.</summary>
+    public void FinishStagingCleanup() => TryDelete(Path.Combine(_root, ".trash"));
 
     /// <summary>
     /// 더 이상 쓰지 않는 모델의 설치 폴더를 지운다(이전 버전의 M2M100 팩). Models/manifests로 같은 id를 다시 선언했으면 남긴다.
@@ -208,7 +226,8 @@ public sealed class LanguagePackManager : ILanguagePackProvider
             var missing = MissingPacks(source, target);
             if (missing.Count == 0) return Task.CompletedTask;
             _session = missing;
-            _sessionTask = RunSessionAsync(missing, cancellationToken);
+            // 잠금 안에서 바로 돌리면 첫 await 전의 Changed 알림(작업 스케줄러 잠금을 잡는다)이 이 잠금 안에서 나간다
+            _sessionTask = Task.Run(() => RunSessionAsync(missing, cancellationToken), CancellationToken.None);
             return _sessionTask;
         }
     }

@@ -243,6 +243,154 @@ public class StateStoreTests
     }
 
     [Fact]
+    public void LockedState_IsReadOnly_AndTheFileSurvives()
+    {
+        var (t, paths, diag) = Env();
+        using var scope = t;
+        File.Copy(ExamplePath, paths.StateFile);
+        var original = File.ReadAllText(paths.StateFile);
+        using (new FileStream(paths.StateFile, FileMode.Open, FileAccess.Read, FileShare.None))
+        using (var store = new StateStore(paths, diag))
+        {
+            Assert.True(store.IsReadOnly);
+            Assert.True(store.IsReadFailure);
+            Assert.NotNull(store.LoadProblem);
+            Assert.Null(store.QuarantinedPath);
+            store.SetPosition("source:new", 1);
+            store.Flush();
+        }
+        Assert.Equal(original, File.ReadAllText(paths.StateFile));
+        Assert.Empty(Directory.GetFiles(paths.Data, "state.corrupt-*.json"));
+    }
+
+    [Fact]
+    public void LockedState_UsesTheBackupWithoutWriting()
+    {
+        var (t, paths, diag) = Env();
+        using var scope = t;
+        File.WriteAllText(paths.StateFile, "{}");
+        File.Copy(ExamplePath, paths.StateFile + ".bak");
+        using (new FileStream(paths.StateFile, FileMode.Open, FileAccess.Read, FileShare.None))
+        using (var store = new StateStore(paths, diag))
+        {
+            Assert.True(store.IsReadOnly);
+            Assert.Equal(2, store.GetPosition(SampleKey));
+        }
+        Assert.Equal("{}", File.ReadAllText(paths.StateFile));
+    }
+
+    [Fact]
+    public void LockedStateAndBackup_DoNotLookLikeCorruption()
+    {
+        var (t, paths, diag) = Env();
+        using var scope = t;
+        File.Copy(ExamplePath, paths.StateFile);
+        File.Copy(ExamplePath, paths.StateFile + ".bak");
+        using (new FileStream(paths.StateFile, FileMode.Open, FileAccess.Read, FileShare.None))
+        using (new FileStream(paths.StateFile + ".bak", FileMode.Open, FileAccess.Read, FileShare.None))
+        using (var store = new StateStore(paths, diag))
+        {
+            Assert.True(store.IsReadOnly);
+            Assert.Null(store.GetPosition(SampleKey));
+        }
+        Assert.Empty(Directory.GetFiles(paths.Data, "state.corrupt-*.json"));
+    }
+
+    [Fact]
+    public void MissingStateAndLockedBackup_DoesNotReplaceTheBackupLater()
+    {
+        var (t, paths, diag) = Env();
+        using var scope = t;
+        var backup = paths.StateFile + ".bak";
+        File.Copy(ExamplePath, backup);
+        using (new FileStream(backup, FileMode.Open, FileAccess.Read, FileShare.None))
+        using (var store = new StateStore(paths, diag))
+        {
+            Assert.True(store.IsReadOnly);
+            store.SetPosition("source:new", 1);
+            store.Flush();
+        }
+        Assert.False(File.Exists(paths.StateFile));
+    }
+
+    [Fact]
+    public async Task BrieflyLockedState_LoadsNormally()
+    {
+        var (t, paths, diag) = Env();
+        using var scope = t;
+        File.Copy(ExamplePath, paths.StateFile);
+        var fileLock = new FileStream(paths.StateFile, FileMode.Open, FileAccess.Read, FileShare.None);
+        var release = Task.Run(async () =>
+        {
+            await Task.Delay(50);
+            fileLock.Dispose();
+        });
+        using (var store = new StateStore(paths, diag))
+        {
+            Assert.False(store.IsReadOnly);
+            Assert.Null(store.LoadProblem);
+            Assert.Equal(2, store.GetPosition(SampleKey));
+        }
+        await release;
+    }
+
+    [Fact]
+    public void NullMembers_AreDropped_NotFatal()
+    {
+        var (t, paths, diag) = Env();
+        using var scope = t;
+        var source = "11111111-1111-4111-8111-111111111111";
+        File.WriteAllText(paths.StateFile, $$"""
+            {
+              "schemaVersion": 1,
+              "sources": [null, {"id": "{{source}}", "path": null, "kind": "folder", "title": "x"}],
+              "positions": {"p": null},
+              "progress": {"q": null},
+              "recents": [null],
+              "favorites": [null, {"bookRef": null, "title": "x"}],
+              "bookmarks": {
+                "x": null,
+                "y": {"bookRef": null, "title": "y", "bookmarks": []},
+                "source:{{source}}": {"bookRef": {"sourceId": "{{source}}"}, "title": "z", "bookmarks": [null, {"pageIndex": 4, "createdAt": "2026-01-01T00:00:00Z"}]}
+              },
+              "seriesPreferences": {"s": null},
+              "exportHistory": [null]
+            }
+            """);
+        using var store = new StateStore(paths, diag);
+        Assert.Null(store.LoadProblem);
+        Assert.Empty(store.Sources);
+        Assert.Null(store.GetPosition("p"));
+        Assert.Null(store.GetProgress("q"));
+        Assert.Empty(store.Recents);
+        Assert.Empty(store.Favorites);
+        Assert.Null(store.GetSeries("s"));
+        Assert.Empty(store.ExportHistory);
+        Assert.Equal(4, Assert.Single(store.AllBookmarks).Bookmarks.Single().PageIndex);
+    }
+
+    [Fact]
+    public void MissingState_FutureSchemaBackup_IsIgnored_LikeTheCorruptPath()
+    {
+        var (t, paths, diag) = Env();
+        using var scope = t;
+        File.WriteAllText(paths.StateFile + ".bak", File.ReadAllText(ExamplePath).Replace("\"schemaVersion\": 1", "\"schemaVersion\": 99"));
+        using var store = new StateStore(paths, diag);
+        Assert.False(store.IsReadOnly);
+        Assert.Null(store.GetPosition(SampleKey));
+    }
+
+    [Fact]
+    public void MissingState_RestoresFromValidBackup()
+    {
+        var (t, paths, diag) = Env();
+        using var scope = t;
+        File.Copy(ExamplePath, paths.StateFile + ".bak");
+        using var store = new StateStore(paths, diag);
+        Assert.Equal(2, store.GetPosition(SampleKey));
+    }
+
+    [Fact]
     public void SourceIdentity_SamePathReturnsSameId_MovedFileUpdatesPath()
     {
         var (t, paths, diag) = Env();

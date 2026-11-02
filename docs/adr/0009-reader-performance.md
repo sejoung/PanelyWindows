@@ -1,6 +1,6 @@
 # ADR 0009: 읽는 동안의 비용을 줄이고, 메모리 예산을 실제로 지키며, 쓰지 않는 번역 모델은 내린다
 
-- 상태: 채택(코드와 Core 테스트까지 확인. Windows 앱 실행 확인과 측정은 아직, 아래 "결과" 참고)
+- 상태: 채택(2026-11-02 Windows에서 `verify.cmd`와 앱 실행으로 동작 확인. 성능 측정은 아직, 아래 "결과" 참고)
 - 날짜: 2026-11-01
 - 보완: [ADR 0008](0008-gemma-translator.md) 7·8번(모델을 올린 뒤 앱 종료까지 유지하던 것을 유휴 해제로 바꾼다)
 - 관련 코드: `ReaderSession.SetPage`·`FlushPositionInBackground`, `MainWindow.RefreshSidebarSoon`·`LoadBookmarkThumbnail`, `LibrarySidebar.SetData`, `PageImageCache.Evict`·`Post`, `ThumbnailPanel.RequestThumbnail`, `SourceMonitor.Watch`, `ExtractionCache.Enforce`·`DetachStaleStaging`·`FinishOrphanCleanup`, `StateStore.Flush`, `TranslationScheduler.RunLoopAsync`·`CachedPages`, `IIdleReleasable`, `IReaderHost.InvalidatePageOverlay`
@@ -41,7 +41,7 @@
 ## 결과
 
 - 측정한 것은 텐서 입력 채우기(960×960, macOS 벤치마크) 하나다. 인덱서 19.4ms·116MiB에서 `Buffer.Span` 3.2ms·10.5MiB로 줄었다. 절대값은 Windows PC와 다르다. PP-OCR 줄 탐지 실측(`OcrRuntimePolicy` 주석의 139ms/상자)에서 전처리 비중이 크지 않아 번역 전체가 눈에 띄게 빨라지지는 않을 것이다.
-- **나머지 효과(쪽 넘김 지연, 메모리, 책 전환)는 측정하지 않았다.** 이 변경은 macOS에서 작성해 Windows 앱을 실행하지 못했다. `Panely.Tests`는 임시 복사본을 `net10.0`으로 바꿔 돌렸고(Windows OCR은 스텁, Windows 전용 테스트 파일 2개 제외), 수정 전과 같은 4개만 실패했다. `Panely.App.Tests`와 `verify.cmd`는 돌리지 못했다.
+- **나머지 효과(쪽 넘김 지연, 메모리, 책 전환)는 측정하지 않았다.** 이 변경은 macOS에서 작성했고, 2026-11-02에 Windows에서 `verify.cmd`를 통과했다. 사이드바 갱신(고정·숨김), 원본↔번역 전환, 저장 공간 탭, 파일을 옮긴 뒤 경로 갱신은 실제 앱을 UI Automation으로 조작해 확인했다. 유휴 모델 해제는 자동 테스트(가짜 공급자)로만 확인했다.
 - 번역을 한동안 쉬었다가 다시 시작하면 모델을 다시 올린다(GPU에서 셰이더 준비 포함 약 20초, 분석과 겹쳐 돈다).
 - `state.json`을 직접 열어 보기는 불편해진다.
 - 썸네일이 처음 화면에서 아래쪽부터 채워질 수 있다.

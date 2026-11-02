@@ -10,7 +10,7 @@ public class ThemeAndCommandTests
     private static ResourceDictionary LoadTheme()
     {
         _ = System.IO.Packaging.PackUriHelper.UriSchemePack; // pack:// 스킴 등록
-        if (Application.Current is null) _ = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        UiHost.EnsureApplication();
         return new ResourceDictionary { Source = new Uri("pack://application:,,,/Panely;component/Themes/Theme.xaml", UriKind.Absolute) };
     }
 

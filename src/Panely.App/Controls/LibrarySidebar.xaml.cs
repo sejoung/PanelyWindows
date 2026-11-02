@@ -45,6 +45,9 @@ public partial class LibrarySidebar : UserControl
     private string? _rootPath;
     private string? _activePath;
     private SidebarData _data = new();
+    /// <summary>루트가 바뀔 때마다 증가. await 뒤에 값이 다르면 그 목록은 이전 루트의 것이다.</summary>
+    private int _rootGeneration;
+    private readonly HashSet<ContextMenu> _openMenus = [];
 
     public LibrarySidebar()
     {
@@ -71,6 +74,11 @@ public partial class LibrarySidebar : UserControl
     public event Action? PinToggled;
     /// <summary>항목을 고른 뒤 리더로 포커스를 돌린다.</summary>
     public event Action? ItemActivated;
+    /// <summary>사이드바의 마지막 컨텍스트 메뉴가 닫혔다.</summary>
+    public event Action? ContextMenuClosed;
+
+    /// <summary>행·트리 항목·헤더의 컨텍스트 메뉴 중 하나가 열려 있다.</summary>
+    public bool HasOpenContextMenu => _openMenus.Count > 0;
 
     /// <summary>파일 트리 항목 우클릭 추가 메뉴(번역 내보내기 등).</summary>
     public Func<string, bool, IEnumerable<Control>>? ExtraContextItems { get; set; }
@@ -399,11 +407,25 @@ public partial class LibrarySidebar : UserControl
         return host;
     }
 
-    private static ContextMenu Menu(params Control[] items)
+    private ContextMenu Menu(params Control[] items)
     {
         var m = new ContextMenu();
         foreach (var i in items) m.Items.Add(i);
-        return m;
+        return Tracked(m);
+    }
+
+    /// <summary>
+    /// 열림 상태는 메뉴 자체의 Opened/Closed로 추적한다. 라우트된 ContextMenuOpening은 메뉴가 없는 행에서도
+    /// 올라오고 그때는 Closing이 짝으로 오지 않아, 세면 열림 상태가 남는다.
+    /// </summary>
+    private ContextMenu Tracked(ContextMenu menu)
+    {
+        menu.Opened += (_, _) => _openMenus.Add(menu);
+        menu.Closed += (_, _) =>
+        {
+            if (_openMenus.Remove(menu) && _openMenus.Count == 0) ContextMenuClosed?.Invoke();
+        };
+        return menu;
     }
 
     private static MenuItem MenuItem(string header, Action click)
@@ -425,6 +447,7 @@ public partial class LibrarySidebar : UserControl
     public async void SetRoot(string? path)
     {
         if (string.Equals(path, _rootPath, StringComparison.OrdinalIgnoreCase)) return;
+        var generation = ++_rootGeneration;
         _rootPath = path;
         _nodes.Clear();
         _tree.Items.Clear();
@@ -433,8 +456,12 @@ public partial class LibrarySidebar : UserControl
         RebuildFiles();
         if (path is null || _library is null) return;
         await LoadChildren(null, path);
-        if (_activePath is not null) await Reveal(_activePath);
+        if (generation == _rootGeneration && _activePath is not null) await Reveal(_activePath);
     }
+
+    /// <summary>파일 트리 최상위 항목 경로(테스트).</summary>
+    internal IReadOnlyList<string> RootItemPaths
+        => _tree.Items.OfType<TreeViewItem>().Select(i => i.Tag).OfType<NodeTag>().Select(t => t.Node.Path).ToList();
 
     /// <summary>활성 책 표시와 조상 자동 펼침.</summary>
     public async void SetActivePath(string? path)
@@ -448,7 +475,7 @@ public partial class LibrarySidebar : UserControl
 
     private async Task Reveal(string path)
     {
-        if (_rootPath is null || !IsUnder(path, _rootPath)) return;
+        if (_rootPath is null || !Shell.PathScope.IsUnder(path, _rootPath)) return;
         var rel = Path.GetRelativePath(_rootPath, path);
         var parts = rel.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
         var current = _rootPath;
@@ -469,12 +496,6 @@ public partial class LibrarySidebar : UserControl
         }
     }
 
-    private static bool IsUnder(string path, string root)
-    {
-        var r = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)) + Path.DirectorySeparatorChar;
-        return Path.GetFullPath(path).StartsWith(r, StringComparison.OrdinalIgnoreCase);
-    }
-
     private async Task EnsureLoaded(TreeViewItem item)
     {
         if (item.Tag is not NodeTag tag || tag.Loaded) return;
@@ -490,6 +511,7 @@ public partial class LibrarySidebar : UserControl
     private async Task LoadChildren(TreeViewItem? parent, string folder)
     {
         if (_library is null) return;
+        var generation = _rootGeneration;
         IReadOnlyList<LibraryNode> children;
         try
         {
@@ -499,6 +521,7 @@ public partial class LibrarySidebar : UserControl
         {
             children = [];
         }
+        if (generation != _rootGeneration) return; // 느린 이전 루트 목록이 새 루트의 트리를 덮지 않게
         ApplyChildren(parent, children);
         if (parent?.Tag is NodeTag t) t.Loaded = true;
         if (parent is null) _treeEmpty.Visibility = _tree.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -578,7 +601,7 @@ public partial class LibrarySidebar : UserControl
         {
             if (!ReferenceEquals(FindAncestorItem(e.OriginalSource as DependencyObject), item)) return;
             var n = ((NodeTag)item.Tag).Node;
-            var menu = new ContextMenu();
+            var menu = Tracked(new ContextMenu());
             menu.Items.Add(MenuItem(Loc.T("Open This Book"), () => OpenNode(n)));
             menu.Items.Add(MenuItem(Loc.T("Show in Explorer"), () => ShowInExplorer(n.Path)));
             var extra = ExtraContextItems?.Invoke(n.Path, n.Kind == LibraryNodeKind.Folder)?.ToList();
@@ -593,7 +616,7 @@ public partial class LibrarySidebar : UserControl
             }
             item.ContextMenu = menu;
         };
-        item.ContextMenu = new ContextMenu();
+        item.ContextMenu = Tracked(new ContextMenu());
         return item;
     }
 
@@ -640,8 +663,10 @@ public partial class LibrarySidebar : UserControl
     public async Task ApplyDirectoryChanges(IReadOnlyList<string> directories)
     {
         if (_rootPath is null) return;
+        var generation = _rootGeneration;
         foreach (var dir in directories.Distinct(StringComparer.OrdinalIgnoreCase))
         {
+            if (generation != _rootGeneration) return;
             if (string.Equals(Path.TrimEndingDirectorySeparator(dir), Path.TrimEndingDirectorySeparator(_rootPath), StringComparison.OrdinalIgnoreCase))
                 await LoadChildren(null, _rootPath);
             else if (_nodes.TryGetValue(dir, out var item) && item.Tag is NodeTag { Loaded: true })
@@ -657,9 +682,13 @@ public partial class LibrarySidebar : UserControl
         if (_rootPath is null) return;
         OverflowNotice.Visibility = Visibility.Collapsed;
         var loaded = _nodes.Where(kv => kv.Value.Tag is NodeTag { Loaded: true }).Select(kv => kv.Key).ToList();
+        var generation = _rootGeneration;
         await LoadChildren(null, _rootPath);
         foreach (var dir in loaded)
+        {
+            if (generation != _rootGeneration) return;
             if (_nodes.TryGetValue(dir, out var item)) await LoadChildren(item, dir);
+        }
         foreach (var item in _nodes.Values.ToList()) RefreshHeader(item);
     }
 

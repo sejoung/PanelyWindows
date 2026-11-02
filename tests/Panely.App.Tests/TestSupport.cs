@@ -3,6 +3,7 @@ using System.Runtime.ExceptionServices;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 
 namespace Panely.App.Tests;
 
@@ -28,6 +29,44 @@ internal static class Sta
         T result = default!;
         Run(() => { result = func(); });
         return result;
+    }
+}
+
+/// <summary>
+/// 앱 리소스(Theme.xaml)가 필요한 컨트롤용 UI 스레드. Application은 프로세스에 하나이고 리소스는 만든 스레드에 묶이므로
+/// 메시지 루프가 도는 STA 스레드 하나에서 만들고 그 위에서 테스트를 실행한다.
+/// </summary>
+internal static class UiHost
+{
+    private static readonly Lazy<Dispatcher> Host = new(Start);
+
+    public static void EnsureApplication() => _ = Host.Value;
+
+    public static void Run(Func<Task> body) => Host.Value.InvokeAsync(body).Task.Unwrap().GetAwaiter().GetResult();
+
+    private static Dispatcher Start()
+    {
+        var ready = new TaskCompletionSource<Dispatcher>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                _ = System.IO.Packaging.PackUriHelper.UriSchemePack; // pack:// 스킴 등록
+                var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+                app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("pack://application:,,,/Panely;component/Themes/Theme.xaml", UriKind.Absolute) });
+                ready.SetResult(Dispatcher.CurrentDispatcher);
+            }
+            catch (Exception ex)
+            {
+                ready.SetException(ex);
+                return;
+            }
+            Dispatcher.Run();
+        })
+        { IsBackground = true };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        return ready.Task.GetAwaiter().GetResult();
     }
 }
 

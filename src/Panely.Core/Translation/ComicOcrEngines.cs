@@ -14,7 +14,7 @@ public sealed class MangaOcrEngine : IDisposable
 {
     private const int InputSize = 224;
     private readonly ModelStore _store;
-    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly ModelGate _gate = new();
     private InferenceSession? _encoder;
     private InferenceSession? _decoder;
     private string[] _vocab = [];
@@ -28,7 +28,7 @@ public sealed class MangaOcrEngine : IDisposable
     public async Task<IReadOnlyList<string>> RecognizeAsync(IReadOnlyList<PagePixels> crops, CancellationToken cancellationToken)
     {
         if (crops.Count == 0) return [];
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _gate.EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             EnsureSessions();
@@ -43,7 +43,7 @@ public sealed class MangaOcrEngine : IDisposable
         }
         finally
         {
-            _gate.Release();
+            _gate.Exit();
         }
     }
 
@@ -148,7 +148,7 @@ public sealed class MangaOcrEngine : IDisposable
 
     public async Task ReleaseIdleAsync(CancellationToken cancellationToken)
     {
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _gate.EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             DisposeSessions();
@@ -156,11 +156,11 @@ public sealed class MangaOcrEngine : IDisposable
         }
         finally
         {
-            _gate.Release();
+            _gate.Exit();
         }
     }
 
-    public void Dispose() => DisposeSessions();
+    public void Dispose() => _gate.Close(DisposeSessions);
 }
 
 /// <summary>
@@ -172,7 +172,7 @@ public sealed class PpOcrEngine : IDisposable
     private const int RecHeight = 48;
     private const int RecMinWidth = 320;
     private readonly ModelStore _store;
-    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly ModelGate _gate = new();
     private readonly Dictionary<string, (InferenceSession Session, string[] Dict)> _recognizers = new();
     private InferenceSession? _detector;
     private string? _revision;
@@ -193,7 +193,7 @@ public sealed class PpOcrEngine : IDisposable
     /// <summary>area(페이지 좌표, null이면 전체)의 글자 줄을 찾아 읽는다.</summary>
     public async Task<IReadOnlyList<TextRegion>> RecognizeAsync(PagePixels image, RectD? area, string language, CancellationToken cancellationToken)
     {
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _gate.EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             EnsureSessions();
@@ -212,14 +212,14 @@ public sealed class PpOcrEngine : IDisposable
         }
         finally
         {
-            _gate.Release();
+            _gate.Exit();
         }
     }
 
     /// <summary>이미 찾은 줄들을 지정 인식 모델로 읽는다(언어 감지에서 ch/korean 모델 비교용).</summary>
     public async Task<IReadOnlyList<(RectD Line, string Recognizer, string Text, double Confidence)>> ReadWithAsync(PagePixels image, RectD? area, IReadOnlyList<string> recognizers, CancellationToken cancellationToken)
     {
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _gate.EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             EnsureSessions();
@@ -234,7 +234,7 @@ public sealed class PpOcrEngine : IDisposable
         }
         finally
         {
-            _gate.Release();
+            _gate.Exit();
         }
     }
 
@@ -245,7 +245,7 @@ public sealed class PpOcrEngine : IDisposable
     /// <summary>limitSideLength: DB 입력의 짧은 변 목표(작을수록 빠르고 작은 글자를 놓치기 쉽다).</summary>
     public async Task<IReadOnlyList<RectD>> DetectLinesAsync(PagePixels image, RectD area, int limitSideLength, CancellationToken cancellationToken)
     {
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _gate.EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             EnsureSessions();
@@ -253,7 +253,7 @@ public sealed class PpOcrEngine : IDisposable
         }
         finally
         {
-            _gate.Release();
+            _gate.Exit();
         }
     }
 
@@ -422,7 +422,7 @@ public sealed class PpOcrEngine : IDisposable
 
     public async Task ReleaseIdleAsync(CancellationToken cancellationToken)
     {
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _gate.EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             DisposeSessions();
@@ -430,11 +430,11 @@ public sealed class PpOcrEngine : IDisposable
         }
         finally
         {
-            _gate.Release();
+            _gate.Exit();
         }
     }
 
-    public void Dispose() => DisposeSessions();
+    public void Dispose() => _gate.Close(DisposeSessions);
 }
 
 /// <summary>

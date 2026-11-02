@@ -15,7 +15,7 @@ public sealed class OnnxBalloonDetector : IBalloonDetector, IIdleReleasable, IDi
 {
     public const int InputSize = 640;
     private readonly ModelStore _store;
-    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly ModelGate _gate = new();
     private InferenceSession? _session;
     private string? _sessionRevision;
 
@@ -58,7 +58,7 @@ public sealed class OnnxBalloonDetector : IBalloonDetector, IIdleReleasable, IDi
             cancellationToken.ThrowIfCancellationRequested();
             var crop = chunks.Count == 1 ? image : image.Crop(0, chunk.Top, image.Width, chunk.Height);
             var tensor = ToTensor(crop);
-            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await _gate.EnterAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 // 유휴 해제와 겹치지 않게 세션은 잠금 안에서 받는다
@@ -93,7 +93,7 @@ public sealed class OnnxBalloonDetector : IBalloonDetector, IIdleReleasable, IDi
             }
             finally
             {
-                _gate.Release();
+                _gate.Exit();
             }
         }
         return TilePlanner.DedupeDetections(all);
@@ -124,7 +124,7 @@ public sealed class OnnxBalloonDetector : IBalloonDetector, IIdleReleasable, IDi
 
     public async Task ReleaseIdleAsync(CancellationToken cancellationToken)
     {
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _gate.EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             _session?.Dispose();
@@ -133,7 +133,7 @@ public sealed class OnnxBalloonDetector : IBalloonDetector, IIdleReleasable, IDi
         }
         finally
         {
-            _gate.Release();
+            _gate.Exit();
         }
     }
 
@@ -150,5 +150,9 @@ public sealed class OnnxBalloonDetector : IBalloonDetector, IIdleReleasable, IDi
         return _session;
     }
 
-    public void Dispose() => _session?.Dispose();
+    public void Dispose() => _gate.Close(() =>
+    {
+        _session?.Dispose();
+        _session = null;
+    });
 }

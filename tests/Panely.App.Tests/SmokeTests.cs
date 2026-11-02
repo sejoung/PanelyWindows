@@ -123,6 +123,56 @@ public sealed class SmokeTests : IDisposable
         CloseGracefully(app);
     }
 
+    [Fact]
+    public void Second_launch_without_paths_restores_a_minimized_window()
+    {
+        var app = Launch(MakeFolderBook("Running Book", 2));
+        WaitForTitle(app, t => t.StartsWith("Running Book", StringComparison.Ordinal), StartTimeout);
+        var window = app.MainWindowHandle;
+        ShowWindow(window, 6); // SW_MINIMIZE
+        Assert.True(WaitUntil(() => IsIconic(window), TimeSpan.FromSeconds(5)), "창을 최소화하지 못했습니다.");
+
+        var forwarder = Launch();
+        Assert.True(forwarder.WaitForExit(15_000), "두 번째 실행이 종료되지 않았습니다.");
+        Assert.Equal(0, forwarder.ExitCode);
+
+        Assert.True(WaitUntil(() => !IsIconic(window), TimeSpan.FromSeconds(10)), "실행 중인 창이 복원되지 않았습니다.");
+        CloseGracefully(app);
+    }
+
+    [Fact]
+    public void Unreachable_primary_exits_with_a_message_and_never_starts_a_second_instance()
+    {
+        // 첫 인스턴스가 Mutex만 쥐고 pipe에 응답하지 않는 상황
+        using var held = new Mutex(initiallyOwned: true, Panely.App.Shell.SingleInstance.NamesFor("Panely", DataRoot).MutexName);
+        var app = Launch(MakeFolderBook("Blocked Book", 2));
+        WaitForTitle(app, t => t == "Panely", StartTimeout);
+        Assert.False(Directory.Exists(DataRoot), "두 번째 인스턴스가 데이터 폴더를 건드렸습니다.");
+
+        CloseGracefully(app); // 메시지 상자 닫기
+        Assert.Equal(1, app.ExitCode);
+        Assert.False(Directory.Exists(DataRoot));
+    }
+
+    private static bool WaitUntil(Func<bool> condition, TimeSpan timeout)
+    {
+        var sw = Stopwatch.StartNew();
+        while (sw.Elapsed < timeout)
+        {
+            if (condition()) return true;
+            Thread.Sleep(100);
+        }
+        return condition();
+    }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ShowWindow(IntPtr window, int command);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsIconic(IntPtr window);
+
     public void Dispose()
     {
         foreach (var p in _processes)

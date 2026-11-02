@@ -21,6 +21,9 @@ namespace Panely.App.Translation;
 /// </summary>
 public sealed partial class TranslationFeature : ITranslationFeature, IDisposable
 {
+    /// <summary>AI 채팅 파일 하나를 가리킨다: 책·언어쌍·범위·쪽 구간(0-based).</summary>
+    internal readonly record struct AiChatSaveKey(string BookKey, string Source, string Target, TranslationScope Scope, int From, int To);
+
     private readonly AppServices _services;
     private readonly WpfTranslationRenderer _renderer;
     private readonly Dispatcher _ui;
@@ -33,7 +36,10 @@ public sealed partial class TranslationFeature : ITranslationFeature, IDisposabl
     private readonly Dictionary<int, TranslatedPage> _pages = new();
     private readonly HashSet<int> _translated = new();
     private readonly Dictionary<string, HashSet<int>> _completedSets = new();
-    private readonly HashSet<(string PageId, int EditIndex, string Language)> _pendingRetranslations = new();
+    /// <summary>번역 중인 수정 항목. 배열 index는 다른 추가 풍선을 지우면 밀리므로 원문과 영역으로 가리킨다.</summary>
+    private readonly HashSet<(string PageId, string RecognizedSource, RectD Rect, string Language)> _pendingRetranslations = new();
+    /// <summary>AI 채팅 파일을 저장할 때 만든 snapshot(오래된 것부터). 창을 닫았다 열어도 답을 이것에 맞춘다(ADR 0005 4번). 앱을 끄면 사라진다.</summary>
+    private readonly List<(AiChatSaveKey Key, AiChatSnapshot Snapshot)> _aiChatSaves = [];
     private int _bookEpoch;
     private bool _editing;
     private bool _stateQueued;
@@ -150,7 +156,7 @@ public sealed partial class TranslationFeature : ITranslationFeature, IDisposabl
         var knownSource = _source;
         _ = Task.Run(() =>
         {
-            var source = knownSource ?? DiscoverSourceFromCache(book, scope);
+            var source = knownSource ?? Service.Scheduler.DiscoverSource(book.Pages, scope);
             var counts = new Dictionary<string, HashSet<int>>();
             if (source is not null)
                 foreach (var lang in TranslationLanguages.All.Where(l => l != source))
@@ -172,15 +178,6 @@ public sealed partial class TranslationFeature : ITranslationFeature, IDisposabl
             LoadVisiblePages();
             QueueStateChanged();
         }, TaskScheduler.FromCurrentSynchronizationContext());
-    }
-
-    private string? DiscoverSourceFromCache(OpenedBook book, TranslationScope scope)
-    {
-        var probe = book.Pages.Take(3).ToList();
-        foreach (var source in TranslationLanguages.All)
-            foreach (var target in TranslationLanguages.All.Where(t => t != source))
-                if (Service.Scheduler.CachedPages(probe, source, target, scope).Count > 0) return source;
-        return null;
     }
 
     private void MaybeAutoTranslate()
@@ -563,6 +560,26 @@ public sealed partial class TranslationFeature : ITranslationFeature, IDisposabl
         _pages.Remove(pageIndex);
         _translated.Remove(pageIndex);
         _host?.InvalidateOverlay();
+    }
+
+    internal void RememberAiChatSave(AiChatSaveKey key, AiChatSnapshot snapshot)
+    {
+        _aiChatSaves.RemoveAll(s => s.Key == key);
+        _aiChatSaves.Add((key, snapshot));
+        if (_aiChatSaves.Count > 32) _aiChatSaves.RemoveAt(0);
+    }
+
+    internal AiChatSnapshot? SavedAiChat(AiChatSaveKey key) => _aiChatSaves.FirstOrDefault(s => s.Key == key).Snapshot;
+
+    /// <summary>이 책·언어쌍·범위로 마지막에 저장한 쪽 구간(0-based).</summary>
+    internal (int From, int To)? LastAiChatRange(string bookKey, string source, string target, TranslationScope scope)
+    {
+        for (var i = _aiChatSaves.Count - 1; i >= 0; i--)
+        {
+            var k = _aiChatSaves[i].Key;
+            if (k.BookKey == bookKey && k.Source == source && k.Target == target && k.Scope == scope) return (k.From, k.To);
+        }
+        return null;
     }
 
     internal void RequestStateRefresh() => QueueStateChanged();

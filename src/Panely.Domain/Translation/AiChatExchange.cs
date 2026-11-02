@@ -135,6 +135,13 @@ public static partial class AiChatExchange
         return new AiChatChanges(updates, returned, unchanged, unknown, missing);
     }
 
+    /// <summary>
+    /// snapshot의 줄이 가리키는 풍선을 지금 표시 풍선에서 찾는다. 재번역이나 원문 수정으로 다른 풍선이 됐으면(ID가 같아도 원문이 다르면) null이다.
+    /// 숨겼을 뿐인 풍선은 그대로 찾는다(id의 번호는 저장할 때 정해져 숨겨도 밀리지 않는다).
+    /// </summary>
+    public static DisplayBubble? FindBubble(AiChatEntry entry, IReadOnlyList<DisplayBubble> bubbles)
+        => bubbles.FirstOrDefault(b => b.Id == entry.BubbleId && b.EffectiveSource == entry.Original);
+
     public static AiChatChanges ComputeChanges(AiChatSnapshot snapshot, IReadOnlyDictionary<string, string> reply)
         => ComputeChanges(snapshot.Entries.Select(e => (e.Id, e.Translation)).ToList(), reply);
 

@@ -45,6 +45,7 @@ public partial class MainWindow : Window
     private bool _libraryOverlayOpen;
     private bool _explicitOpenSeen;
     private bool _closing;
+    private bool _shutdownFinished;
     private bool _fullScreen;
     private WindowState _restoreState;
     private WindowStyle _restoreStyle;
@@ -96,10 +97,12 @@ public partial class MainWindow : Window
     /// <summary>창이 보인 뒤: 실행 인자 열기 또는 마지막 폴더 복원.</summary>
     public void StartUp(IReadOnlyList<string> paths)
     {
-        // 저장 파일 손상/미래 schema: 기본값으로 시작했음을 알린다(원본은 격리 보존)
+        // 저장 파일 잠김/미래 schema/손상: 어떻게 시작했는지 알린다(원본은 덮지 않는다)
         if (_state is Panely.Core.State.StateStore { LoadProblem: not null } store)
         {
-            var message = store.IsReadOnly
+            var message = store.IsReadFailure
+                ? Loc.T("Panely couldn't open your saved data, possibly because another program is using it. Changes won't be saved in this session. Restart Panely to try again.")
+                : store.IsReadOnly
                 ? Loc.T("Your saved data was created by a newer version of Panely. Changes won't be saved in this session.")
                 : Loc.T("Your saved data couldn't be read, so Panely started with default settings. A copy of the old file was kept.");
             _session.Notices.Post(new Notice(NoticeCategory.ReaderError, message, [NoticeAction.Dismiss]));
@@ -146,6 +149,7 @@ public partial class MainWindow : Window
     {
         _session.BookClosing += (_, old) =>
         {
+            ResetBookmarkThumbnails();
             if (old is not null && Viewer.Zoom.InitialFitApplied)
                 _session.ZoomMemory.Remember(old.SeriesKey, Viewer.Zoom.ManualFactor);
         };
@@ -533,15 +537,21 @@ public partial class MainWindow : Window
             _revealTimer.Stop();
         };
         _revealTimer.Tick += (_, _) => { _revealTimer.Stop(); OpenLibraryOverlay(); };
-        _dismissTimer.Tick += (_, _) => { _dismissTimer.Stop(); CloseLibraryOverlay(); };
-        LibraryOverlay.MouseEnter += (_, _) => _dismissTimer.Stop();
-        LibraryOverlay.MouseLeave += (_, _) =>
+        _dismissTimer.Tick += (_, _) =>
         {
-            if (_libraryOverlayOpen && !_sidebar.IsKeyboardFocusWithin && !HasOpenContextMenu()) _dismissTimer.Start();
+            _dismissTimer.Stop();
+            if (!_sidebar.HasOpenContextMenu) CloseLibraryOverlay();
         };
+        LibraryOverlay.MouseEnter += (_, _) => _dismissTimer.Stop();
+        LibraryOverlay.MouseLeave += (_, _) => StartLibraryDismiss();
+        // 메뉴가 열린 채 포인터가 나갔으면 MouseLeave가 다시 오지 않으므로 메뉴가 닫힐 때 이어서 숨긴다
+        _sidebar.ContextMenuClosed += () => { if (!LibraryOverlay.IsMouseOver) StartLibraryDismiss(); };
     }
 
-    private bool HasOpenContextMenu() => _sidebar.ContextMenu?.IsOpen == true;
+    private void StartLibraryDismiss()
+    {
+        if (_libraryOverlayOpen && !_sidebar.IsKeyboardFocusWithin && !_sidebar.HasOpenContextMenu) _dismissTimer.Start();
+    }
 
     private void OpenLibraryOverlay()
     {
@@ -579,10 +589,16 @@ public partial class MainWindow : Window
 
     private async void OnClosing(object? sender, CancelEventArgs e)
     {
-        if (_closing) return;
+        if (_shutdownFinished) return;
+        // 정리가 끝나 Shutdown을 부르기 전까지는 어떤 닫기 요청도 창을 닫지 못한다(이미 진행 중이면 그쪽이 끝낸다)
         e.Cancel = true;
-        if (_feature.ExitWarning is { } warning && !ConfirmDialog.Show(this, Loc.T("Exit Panely?"), warning, Loc.T("Exit"))) return;
+        if (_closing) return;
         _closing = true;
+        if (_feature.ExitWarning is { } warning && !ConfirmDialog.Show(this, Loc.T("Exit Panely?"), warning, Loc.T("Exit")))
+        {
+            _closing = false;
+            return;
+        }
         try
         {
             _session.FlushPosition();
@@ -593,11 +609,24 @@ public partial class MainWindow : Window
         {
             _services.Diagnostics.Warning(LogCategory.App, $"Shutdown: {ex.GetType().Name}");
         }
-        foreach (var w in OwnedWindows.Cast<Window>().ToList()) w.Close();
-        _settingsWindow?.Close();
-        _session.Dispose();
-        _cache.Dispose();
-        Application.Current.Shutdown();
+        try
+        {
+            foreach (var w in OwnedWindows.Cast<Window>().ToList()) w.Close();
+            _settingsWindow?.Close();
+            ResetBookmarkThumbnails();
+            _session.Dispose();
+            _cache.Dispose();
+        }
+        catch (Exception ex)
+        {
+            _services.Diagnostics.Warning(LogCategory.App, $"Shutdown: {ex.GetType().Name}");
+        }
+        finally
+        {
+            // 닫기를 계속 취소하므로 여기까지 오면 어떤 경우에도 끝내야 한다
+            _shutdownFinished = true;
+            Application.Current.Shutdown();
+        }
     }
 
     public void FocusReader()

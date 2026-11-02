@@ -41,6 +41,7 @@ public static class BalloonGrouper
             }
             foreach (var (container, lines) in byContainer)
             {
+                lines.AddRange(RowNumbers(rawRegions, regions, lines, container, textBoxes, balloons));
                 RectD? balloonRect = container.Kind == DetectionKind.Balloon ? container.Rect : null;
                 groups.Add((lines, balloonRect));
             }
@@ -68,6 +69,36 @@ public static class BalloonGrouper
     {
         var lines = Clean(rawRegions, language, keepNumbers: true);
         return lines.Count == 0 ? null : Build(lines, null, language);
+    }
+
+    /// <summary>
+    /// 잡음으로 버린 줄 중 같은 탐지 상자 안에서 남은 줄과 나란히 붙은 짧은 숫자 조각("Volume" + "01", OCR이 "O1"로 읽기도 한다).
+    /// 줄 탐지가 한 줄을 둘로 나눈 것이다. 버리면 patch가 앞 조각만 덮어 원문 숫자가 보이고 번역에서도 빠진다.
+    /// 상자 밖이나 다른 줄의 숫자(쪽 번호 등)는 여전히 버린다.
+    /// </summary>
+    private static List<TextRegion> RowNumbers(IReadOnlyList<TextRegion> rawRegions, List<TextRegion> kept, List<TextRegion> lines, DetectedRegion container, List<DetectedRegion> textBoxes, List<DetectedRegion> balloons)
+    {
+        var found = new List<TextRegion>();
+        foreach (var r in rawRegions)
+        {
+            var text = Scripts.Normalize(r.Text);
+            if (r.Rect.IsEmpty || !IsNumberFragment(text) || kept.Any(k => k.Rect == r.Rect)) continue;
+            if (!lines.Any(l => SameRow(l, r)) || !ReferenceEquals(FindContainer(r, textBoxes, balloons), container)) continue;
+            found.Add(r with { Text = text });
+        }
+        return found;
+    }
+
+    /// <summary>숫자가 있고 글자는 숫자보다 많지 않은 짧은 조각.</summary>
+    private static bool IsNumberFragment(string text)
+        => text.Length <= 6 && text.Any(char.IsDigit) && text.Count(char.IsLetter) <= text.Count(char.IsDigit);
+
+    private static bool SameRow(TextRegion a, TextRegion b)
+    {
+        if (a.IsVertical || b.IsVertical) return false;
+        var overlap = Math.Min(a.Rect.Bottom, b.Rect.Bottom) - Math.Max(a.Rect.Top, b.Rect.Top);
+        var gap = Math.Max(a.Rect.Left, b.Rect.Left) - Math.Min(a.Rect.Right, b.Rect.Right);
+        return overlap >= 0.5 * Math.Min(a.Rect.Height, b.Rect.Height) && gap < Math.Min(a.GlyphSize, b.GlyphSize);
     }
 
     /// <summary>정규화와 잡음 제거. keepNumbers면 글자 없이 숫자(와 기호)만 있는 줄도 남긴다.</summary>

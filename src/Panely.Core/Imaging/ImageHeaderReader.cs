@@ -228,7 +228,8 @@ public static class ImageHeaderReader
             if (size == 1)
             {
                 if (i + 16 > end) return;
-                size = (long)BinaryPrimitives.ReadUInt64BigEndian(d.Slice(i + 8, 8));
+                // long으로 바꾸면 음수가 될 수 있고 i + size가 넘칠 수 있다. 남은 범위와 비교만 하게 잘라 둔다.
+                size = (long)Math.Min(BinaryPrimitives.ReadUInt64BigEndian(d.Slice(i + 8, 8)), (ulong)long.MaxValue);
                 header = 16;
             }
             else if (size == 0)
@@ -236,7 +237,8 @@ public static class ImageHeaderReader
                 size = end - i;
             }
             if (size < header) return;
-            var boxEnd = (int)Math.Min(end, i + size);
+            var remaining = end - i;
+            var boxEnd = size >= remaining ? end : i + (int)size;
             if (type.SequenceEqual("meta"u8))
             {
                 sawMeta = true;
@@ -263,8 +265,8 @@ public static class ImageHeaderReader
             {
                 return; // meta가 뒤에 있으면 데이터 부족
             }
-            if (i + size > end) return;
-            i = (int)(i + size);
+            if (size >= remaining) return;
+            i += (int)size; // size >= header >= 8이므로 항상 앞으로 간다
         }
     }
 }

@@ -34,6 +34,7 @@ internal sealed class AiChatSheet : SheetWindow
     private readonly TextBox _to;
     private readonly TextBlock _count;
     private bool _wholeBook = true;
+    /// <summary>이 범위로 저장한 파일의 snapshot. 저장한 적이 없으면 null이고 답을 적용하지 않는다.</summary>
     private AiChatSnapshot? _snapshot;
     private string? _fileName;
     private IReadOnlyDictionary<(string PageId, TranslationScope Scope), PageEdits?>? _undoSnapshot;
@@ -52,12 +53,15 @@ internal sealed class AiChatSheet : SheetWindow
         body.Children.Add(Gap(Ui.Caption(Loc.T("A chat that reads the whole book can fix what translating balloon by balloon misses: who's speaking, how they speak, names. Use the one you already have — ChatGPT, Claude, Gemini or another."))));
 
         body.Children.Add(Gap(Ui.Section(Loc.T("Pages")), 14));
-        _from = Ui.TextBox("1");
-        _to = Ui.TextBox(book.Pages.Count.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        // 다시 열면 마지막으로 저장한 범위를 고른다. 그 파일의 답을 붙여넣으러 온 것이다.
+        var saved = feature.LastAiChatRange(book.BookKey, source, target, _scope) ?? (0, book.Pages.Count - 1);
+        _wholeBook = saved.From == 0 && saved.To == book.Pages.Count - 1;
+        _from = Ui.TextBox((saved.From + 1).ToString(System.Globalization.CultureInfo.InvariantCulture));
+        _to = Ui.TextBox((saved.To + 1).ToString(System.Globalization.CultureInfo.InvariantCulture));
         _from.Width = _to.Width = 64;
-        _from.IsEnabled = _to.IsEnabled = false;
-        body.Children.Add(Gap(Ui.Radio(Loc.T("Whole Book"), "ai-scope", true, () => { _wholeBook = true; _from.IsEnabled = _to.IsEnabled = false; RangeChanged(); }), 4));
-        var choose = Ui.Radio(Loc.T("Choose Pages"), "ai-scope", false, () => { _wholeBook = false; _from.IsEnabled = _to.IsEnabled = true; RangeChanged(); });
+        _from.IsEnabled = _to.IsEnabled = !_wholeBook;
+        body.Children.Add(Gap(Ui.Radio(Loc.T("Whole Book"), "ai-scope", _wholeBook, () => { _wholeBook = true; _from.IsEnabled = _to.IsEnabled = false; RangeChanged(); }), 4));
+        var choose = Ui.Radio(Loc.T("Choose Pages"), "ai-scope", !_wholeBook, () => { _wholeBook = false; _from.IsEnabled = _to.IsEnabled = true; RangeChanged(); });
         var range = Ui.Row(choose, Spaced(Ui.Caption(Loc.T("From page")), 12), Spaced(_from, 6), Spaced(Ui.Caption(Loc.T("To page")), 12), Spaced(_to, 6));
         _from.TextChanged += (_, _) => RangeChanged();
         _to.TextChanged += (_, _) => RangeChanged();
@@ -109,14 +113,20 @@ internal sealed class AiChatSheet : SheetWindow
         close.HorizontalAlignment = HorizontalAlignment.Right;
         body.Children.Add(Gap(close, 12));
         SetBody(body, save);
-        _prompt.Text = AiChatPrompt.Build(new AiChatSnapshot(book.BookKey, book.Title, source, target, []), FileNameFor());
         RangeChanged();
+        _prompt.Text = AiChatPrompt.Build(_snapshot ?? new AiChatSnapshot(book.BookKey, book.Title, source, target, []), FileNameFor());
     }
 
-    /// <summary>범위가 바뀌면 파일에 담길 말풍선 수를 다시 센다. 응답은 저장할 때 만든 snapshot에 맞추므로 기존 snapshot은 버린다.</summary>
+    private TranslationFeature.AiChatSaveKey SaveKey()
+    {
+        var (from, to) = PageRange();
+        return new TranslationFeature.AiChatSaveKey(_book.BookKey, _source, _target, _scope, from, to);
+    }
+
+    /// <summary>범위가 바뀌면 파일에 담길 말풍선 수를 다시 센다. 응답은 저장할 때 만든 snapshot에 맞추므로 그 범위로 저장한 snapshot으로 바꾼다.</summary>
     private void RangeChanged()
     {
-        _snapshot = null;
+        _snapshot = _f.SavedAiChat(SaveKey());
         _count.Text = $"{Loc.T("Balloons")}: {BuildSnapshot().Entries.Count}";
     }
 
@@ -141,7 +151,7 @@ internal sealed class AiChatSheet : SheetWindow
         return (from - 1, to - 1);
     }
 
-    /// <summary>snapshot은 한 번 만들고 이후 응답을 이 snapshot에 매핑한다.</summary>
+    /// <summary>지금 상태로 snapshot을 만든다. 응답은 파일을 저장할 때 만든 snapshot에 매핑한다.</summary>
     private AiChatSnapshot BuildSnapshot()
     {
         var (from, to) = PageRange();
@@ -159,19 +169,22 @@ internal sealed class AiChatSheet : SheetWindow
 
     private void SaveFile()
     {
-        _snapshot = BuildSnapshot();
-        if (_snapshot.Entries.Count == 0)
+        // 저장을 끝낸 뒤에야 이전 snapshot을 바꾼다. 대화 상자를 취소하면 이전에 저장한 파일의 답을 그대로 받을 수 있어야 한다.
+        var snapshot = BuildSnapshot();
+        if (snapshot.Entries.Count == 0)
         {
             _status.Text = Loc.T("Nothing in this book is translated into this language yet.");
             return;
         }
-        var dialog = new SaveFileDialog { FileName = AiChatPrompt.FileName(_snapshot), Filter = "Text (*.txt)|*.txt", DefaultExt = ".txt", AddExtension = true };
+        var dialog = new SaveFileDialog { FileName = AiChatPrompt.FileName(snapshot), Filter = "Text (*.txt)|*.txt", DefaultExt = ".txt", AddExtension = true };
         if (dialog.ShowDialog(this) != true) return;
         try
         {
-            File.WriteAllText(dialog.FileName, AiChatExchange.BuildFile(_snapshot, Loc.LanguageNameIn("en", _source), Loc.LanguageNameIn("en", _target)), new UTF8Encoding(false));
+            File.WriteAllText(dialog.FileName, AiChatExchange.BuildFile(snapshot, Loc.LanguageNameIn("en", _source), Loc.LanguageNameIn("en", _target)), new UTF8Encoding(false));
+            _snapshot = snapshot;
+            _f.RememberAiChatSave(SaveKey(), snapshot);
             _fileName = System.IO.Path.GetFileName(dialog.FileName);
-            _prompt.Text = AiChatPrompt.Build(_snapshot, _fileName);
+            _prompt.Text = AiChatPrompt.Build(snapshot, _fileName);
             _status.Text = Loc.T("Saved “%@”. Attach it to a new chat.", _fileName);
         }
         catch (Exception ex)
@@ -230,7 +243,6 @@ internal sealed class AiChatSheet : SheetWindow
 
     private void Apply(string reply)
     {
-        _snapshot ??= BuildSnapshot();
         var parsed = AiChatExchange.Parse(reply);
         if (parsed.Count == 0)
         {
@@ -238,7 +250,14 @@ internal sealed class AiChatSheet : SheetWindow
             _status.Text = Loc.T("No balloon lines like “[p12-3] …” in it. Use the chat's whole reply.");
             return;
         }
-        var changes = AiChatExchange.ComputeChanges(_snapshot, parsed);
+        // id는 저장한 파일에서만 뜻이 있다. 지금 상태로 snapshot을 다시 만들면 숨긴 풍선만큼 번호가 밀려 다른 풍선에 적용된다.
+        var changes = _snapshot is null ? null : AiChatExchange.ComputeChanges(_snapshot, parsed);
+        if (_snapshot is null || changes is null || !CanApply(_snapshot, changes))
+        {
+            _result.Visibility = Visibility.Collapsed;
+            _status.Text = Loc.T("This reply can't be matched to the balloons: they changed after the file was saved, or the file wasn't saved since Panely started. Save the text file again and give it to the chat.");
+            return;
+        }
         // 적용 전 snapshot(일괄 Undo)
         var affected = changes.Updates.Keys.Select(id => _snapshot.Find(id)!).Select(e => (_book.Pages[e.PageIndex].PageId, _scope)).Distinct().ToList();
         _undoSnapshot = _f.Service.Edits.Snapshot(affected);
@@ -248,7 +267,7 @@ internal sealed class AiChatSheet : SheetWindow
             var pageId = _book.Pages[entry.PageIndex].PageId;
             var cached = _f.Service.Scheduler.LoadCached(pageId, _source, _target, _scope);
             var edits = _f.Service.Edits.Get(pageId, _scope) ?? PageEditsEditor.Empty(pageId, _scope);
-            var bubble = EditResolver.Resolve(cached?.Bubbles ?? [], edits, _target).FirstOrDefault(b => b.Id == entry.BubbleId);
+            var bubble = AiChatExchange.FindBubble(entry, EditResolver.Resolve(cached?.Bubbles ?? [], edits, _target));
             if (bubble is null) continue;
             int index;
             if (bubble.IsAdded && bubble.EditIndex is { } ai) index = ai;
@@ -267,6 +286,20 @@ internal sealed class AiChatSheet : SheetWindow
             : Loc.T("Checked the reply — no translation needed changing");
         ShowResult(missing ? Icons.Warning : Icons.Check, missing ? "Brush.Danger" : "Brush.Accent", title, detail, canUndo: changes.Updates.Count > 0);
         _f.Host?.InvalidateOverlay();
+    }
+
+    /// <summary>바꿀 줄이 모두 저장할 때의 그 말풍선을 아직 가리키는가. 하나라도 아니면 어느 답도 적용하지 않는다.</summary>
+    private bool CanApply(AiChatSnapshot snapshot, AiChatChanges changes)
+    {
+        foreach (var page in changes.Updates.Keys.Select(id => snapshot.Find(id)!).GroupBy(e => e.PageIndex))
+        {
+            if (page.Key >= _book.Pages.Count) return false;
+            var pageId = _book.Pages[page.Key].PageId;
+            var cached = _f.Service.Scheduler.LoadCached(pageId, _source, _target, _scope);
+            var bubbles = EditResolver.Resolve(cached?.Bubbles ?? [], _f.Service.Edits.Get(pageId, _scope), _target);
+            if (page.Any(e => AiChatExchange.FindBubble(e, bubbles) is null)) return false;
+        }
+        return true;
     }
 
     private void ShowResult(Geometry icon, string iconBrush, string title, string detail, bool canUndo)

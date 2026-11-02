@@ -92,6 +92,51 @@ public class ExtractionCacheTests
         Assert.Equal(10, cache.GetUsage().TotalBytes);
     }
 
+    private static string EntryFile(TempDir t, string key, params string[] rest)
+        => t.P(["appdata", "Cache", "extraction", "v1", "entries", key, .. rest]);
+
+    [Fact]
+    public async Task OrphanCleanup_KeepsEntryWhoseMetaIsTemporarilyUnreadable()
+    {
+        var (t, cache) = Create(10_000);
+        using var scope = t;
+        (await Put(cache, "k", 10)).Dispose();
+        using (new FileStream(EntryFile(t, "k", "entry.json"), FileMode.Open, FileAccess.Read, FileShare.None))
+            cache.CleanupOrphans();
+        using var lease = cache.TryAcquire("k");
+        Assert.NotNull(lease);
+        Assert.True(File.Exists(System.IO.Path.Combine(lease!.ContentPath, "data.bin")));
+    }
+
+    [Fact]
+    public async Task OrphanCleanup_SkipsLeasedEntry_EvenWithoutMeta()
+    {
+        var (t, cache) = Create(10_000);
+        using var scope = t;
+        using var lease = await Put(cache, "k", 10);
+        File.Delete(EntryFile(t, "k", "entry.json"));
+        cache.CleanupOrphans();
+        Assert.True(File.Exists(System.IO.Path.Combine(lease.ContentPath, "data.bin")));
+    }
+
+    [Fact]
+    public async Task Publish_SharesLeasedEntry_WhenItsMetaCouldNotBeRead()
+    {
+        var (t, cache) = Create(10_000);
+        using var scope = t;
+        using var first = await Put(cache, "k", 10);
+        CacheLease second;
+        using (new FileStream(EntryFile(t, "k", "entry.json"), FileMode.Open, FileAccess.Read, FileShare.None))
+            second = await Put(cache, "k", 10);
+        using (second)
+        {
+            Assert.Equal(first.ContentPath, second.ContentPath);
+            Assert.True(File.Exists(System.IO.Path.Combine(first.ContentPath, "data.bin")));
+            Assert.Empty(Directory.GetDirectories(t.P("appdata", "Cache", "extraction", "v1", "staging")));
+        }
+        Assert.True(cache.IsLeased("k")); // first는 아직 쥐고 있다
+    }
+
     [Fact]
     public async Task FailedPopulate_LeavesNoEntryOrStaging_AndOrphansAreCleaned()
     {

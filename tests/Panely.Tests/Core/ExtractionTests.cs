@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using Panely.Core.Abstractions;
 using Panely.Core.Archives;
 using static Panely.Tests.Core.CoreTestKit;
@@ -111,6 +112,52 @@ public class ExtractionTests
         new SafeExtractor(ExtractionLimits.Default).ExtractAll(reader, dest, expandNested: true, CancellationToken.None);
         Assert.True(File.Exists(t.P("out", "bad.zip")));
         Assert.True(Directory.Exists(t.P("out", "good.zip")));
+    }
+
+    private static byte[] StoredZipBytes(int contentBytes, int seed)
+    {
+        var content = new byte[contentBytes];
+        new Random(seed).NextBytes(content);
+        using var ms = new MemoryStream();
+        using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            using var s = zip.CreateEntry("001.png", CompressionLevel.NoCompression).Open();
+            s.Write(content);
+        }
+        return ms.ToArray();
+    }
+
+    [Fact]
+    public void Walk_VolumesNearTheLimit_FitBecauseEachArchiveIsReplaced()
+    {
+        // 8권(저장 방식)이 한도 바로 아래: 펼치는 동안 지울 아카이브까지 세면 첫 권에서 실패했다
+        using var t = new TempDir();
+        var volumes = Enumerable.Range(1, 8).Select(i => ($"Vol{i}.zip", (byte[]?)StoredZipBytes(1000, i))).ToList();
+        var outer = t.P("box.zip");
+        using (var fs = File.Create(outer))
+        using (var zip = new ZipArchive(fs, ZipArchiveMode.Create))
+        {
+            foreach (var (name, data) in volumes)
+            {
+                using var s = zip.CreateEntry(name, CompressionLevel.NoCompression).Open();
+                s.Write(data!);
+            }
+        }
+        var limit = volumes.Sum(v => (long)v.Item2!.Length) + 500;
+        using var reader = new ZipArchiveReader(outer);
+        var total = new SafeExtractor(new ExtractionLimits(limit, 1000, 3)).ExtractAll(reader, t.P("out"), expandNested: true, CancellationToken.None);
+        Assert.Equal(8000, total);
+        for (var i = 1; i <= 8; i++) Assert.True(File.Exists(t.P("out", $"Vol{i}.zip", "001.png")));
+    }
+
+    [Fact]
+    public void Budget_WriteCreditCoversOnlyTheReplacedArchive()
+    {
+        var b = new ExtractionBudget(new ExtractionLimits(1000, 10, 3));
+        b.AddWritten(900);
+        b.AddWritten(300, replacedArchiveBytes: 200); // 1200 - 200 = 1000
+        var ex = Assert.Throws<BookOpenException>(() => b.AddWritten(1, replacedArchiveBytes: 200)); // 실제 바이트가 넘치면 멈춘다
+        Assert.Equal(OpenErrorKind.ExtractionLimit, ex.Kind);
     }
 
     [Fact]

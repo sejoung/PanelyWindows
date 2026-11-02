@@ -17,9 +17,11 @@ public sealed class TranslationService : IAsyncDisposable
         State = state;
         Models = new ModelStore(paths.Models);
         // 남은 임시 다운로드와 이전 버전의 M2M100 팩(최대 약 2.9GB)은 지우는 데 시간이 걸릴 수 있어 백그라운드에서 지운다.
+        // 임시 다운로드는 새 다운로드와 겹치지 않게 여기서 먼저 치워 둔다.
+        Models.DetachStaleStaging();
         _ = Task.Run(() =>
         {
-            Models.CleanupStaging();
+            Models.FinishStagingCleanup();
             Models.RemoveObsolete(ModelCatalog.ObsoleteIds);
         });
         Providers = providers ?? CreateDefaultProviders(Models);
@@ -60,9 +62,13 @@ public sealed class TranslationService : IAsyncDisposable
     {
         await Exports.CancelAllAsync().ConfigureAwait(false);
         await Scheduler.DisposeAsync().ConfigureAwait(false);
-        (Providers.Translator as IDisposable)?.Dispose();
-        (Providers.Detector as IDisposable)?.Dispose();
-        (Providers.Recognizer as IDisposable)?.Dispose();
+        // 공급자는 쓰는 중인 호출을 잠깐 기다린다(스케줄러 밖의 말풍선 추가 OCR 등). UI 스레드를 막지 않게 worker에서 한다.
+        await Task.Run(() =>
+        {
+            (Providers.Translator as IDisposable)?.Dispose();
+            (Providers.Detector as IDisposable)?.Dispose();
+            (Providers.Recognizer as IDisposable)?.Dispose();
+        }).ConfigureAwait(false);
     }
 }
 

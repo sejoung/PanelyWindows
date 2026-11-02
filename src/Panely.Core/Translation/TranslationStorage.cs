@@ -114,13 +114,25 @@ public static class TranslationJson
 
     public static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
 
-    /// <summary>같은 디렉터리 temp에 쓰고 replace.</summary>
+    /// <summary>같은 디렉터리 temp에 쓰고 디스크까지 내린 뒤 replace(전원이 나가도 잘린 파일이 제자리에 남지 않게).</summary>
     public static void AtomicWrite(string path, string content)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        File.WriteAllText(temp, content, new UTF8Encoding(false));
-        File.Move(temp, path, true);
+        try
+        {
+            using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                stream.Write(new UTF8Encoding(false).GetBytes(content));
+                stream.Flush(flushToDisk: true);
+            }
+            File.Move(temp, path, true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            try { File.Delete(temp); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            throw;
+        }
     }
 }
 
@@ -131,7 +143,7 @@ public readonly record struct TranslationCacheKey(string PageId, string Source, 
 }
 
 /// <summary>
-/// 완료 쪽 번역 캐시(Cache/translation/v1). 손상 파일은 miss. 완료 쪽만 저장.
+/// 완료 쪽 번역 캐시(Cache/translation/v1). 손상 파일은 miss(지운다). 일시적으로 읽지 못한 파일은 miss지만 남겨 둔다. 완료 쪽만 저장.
 /// Clear는 generation을 올려 in-flight 결과가 다시 기록되지 않게 한다.
 /// </summary>
 public sealed class TranslationCache
@@ -155,23 +167,55 @@ public sealed class TranslationCache
         return Path.Combine(_root, hash[..2], hash + ".json");
     }
 
-    public bool Contains(TranslationCacheKey key) => File.Exists(PathFor(key));
+    /// <summary>
+    /// 파일이 있고 끝까지 쓰인 것으로 보이는가. CachedPages가 책 전체에 부르므로 파싱하지 않고 끝 두 바이트만 본다
+    /// (PageDto는 들여쓰기 없이 bubbles 배열로 끝나므로 온전한 파일은 언제나 "]}"로 끝난다).
+    /// 읽어 봐야 아는 손상은 TryLoad가 잡는다. 지금 열 수 없으면 있다고 답하고 판단을 TryLoad에 맡긴다.
+    /// </summary>
+    public bool Contains(TranslationCacheKey key)
+    {
+        var path = PathFor(key);
+        if (!File.Exists(path)) return false;
+        try
+        {
+            using var handle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            var length = RandomAccess.GetLength(handle);
+            if (length < 2) return false;
+            Span<byte> tail = stackalloc byte[2];
+            return RandomAccess.Read(handle, tail, length - 2) == 2 && tail[0] == (byte)']' && tail[1] == (byte)'}';
+        }
+        catch (FileNotFoundException) { return false; }
+        catch (DirectoryNotFoundException) { return false; }
+        catch (IOException) { return true; }
+        catch (UnauthorizedAccessException) { return true; }
+    }
 
     public TranslatedPage? TryLoad(TranslationCacheKey key)
     {
         var path = PathFor(key);
         if (!File.Exists(path)) return null;
+        string json;
         try
         {
-            var page = TranslationJson.DeserializePage(File.ReadAllText(path));
-            if (page.PageId != key.PageId || page.TargetLanguage != key.Target || !page.IsComplete) return null;
-            return page;
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var reader = new StreamReader(stream, new UTF8Encoding(false));
+            json = reader.ReadToEnd();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null; // 일시적 오류(백신·공유 위반 등): 멀쩡한 파일이므로 지우지 않는다
+        }
+        try
+        {
+            var page = TranslationJson.DeserializePage(json);
+            if (page.PageId == key.PageId && page.TargetLanguage == key.Target && page.IsComplete) return page;
         }
         catch (Exception)
         {
-            TryDelete(path); // 손상 캐시는 miss로 보고 다시 생성한다
-            return null;
+            // 아래에서 지운다
         }
+        TryDelete(path); // 손상 캐시는 miss로 보고 다시 생성한다
+        return null;
     }
 
     /// <returns>generation이 바뀌었거나 미완료 쪽이면 false(기록하지 않음).</returns>

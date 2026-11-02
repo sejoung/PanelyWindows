@@ -37,12 +37,23 @@ public partial class App : Application
         _instance = new SingleInstance();
         if (!_instance.TryAcquire())
         {
-            if (_instance.SendToPrimary(paths) || paths.Count == 0)
+            if (_instance.SendToPrimary(paths))
             {
                 Shutdown(0);
                 return;
             }
+            // Mutex를 쥔 인스턴스가 있는 동안 두 번째 인스턴스로 계속하면 staging과 state.json을 서로 망가뜨린다.
+            // 기다리는 사이 첫 인스턴스가 끝나 Mutex가 풀렸을 때만 이어서 시작한다.
+            if (!_instance.TryAcquire())
+            {
+                Loc.SetLanguage(Loc.Resolve(Panely.Domain.Model.AppLanguage.System)); // 설정은 이 인스턴스가 읽지 않는다
+                MessageBox.Show(Loc.T("Panely is already running but isn't responding. Close it and try again."), "Panely", MessageBoxButton.OK, MessageBoxImage.Warning);
+                Shutdown(1);
+                return;
+            }
         }
+        // 창을 만드는 동안(수 초)에도 후속 실행이 연결할 수 있게 먼저 연다. 요청은 MarkReady까지 쌓인다.
+        _instance.StartServer();
 
         // 모든 앱 창(설정·작업·시트 포함)에 다크 캡션을 적용한다. 개별 창이 빠뜨려도 밝은 제목 표시줄이 나오지 않게.
         EventManager.RegisterClassHandler(typeof(Window), FrameworkElement.LoadedEvent,
@@ -97,9 +108,9 @@ public partial class App : Application
         var window = new MainWindow(Services, _library, _monitor, new AvailabilityChecker(), feature);
         MainWindow = window;
         _instance.OpenRequested += list => Dispatcher.BeginInvoke(() => window.OpenFromExternal(list));
-        _instance.StartServer();
         window.Show();
         window.StartUp(paths);
+        _instance.MarkReady();
         if (e.Args.Contains("--settings", StringComparer.OrdinalIgnoreCase)) window.ShowSettings();
     }
 

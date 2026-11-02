@@ -15,6 +15,14 @@ internal static partial class NativeMethods
     [LibraryImport("dwmapi.dll")]
     public static partial int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
 
+    [LibraryImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetNamedPipeServerProcessId(SafeHandle pipe, out uint processId);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool AllowSetForegroundWindow(uint processId);
+
     private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
     private const int DWMWA_BORDER_COLOR = 34;
     private const int DWMWA_CAPTION_COLOR = 35;

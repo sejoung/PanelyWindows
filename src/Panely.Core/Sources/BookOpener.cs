@@ -114,7 +114,12 @@ public sealed class BookOpener : IBookOpener
         };
     }
 
-    private static bool StrictInnerPath(OpenIntent intent) => intent is OpenIntent.Continue or OpenIntent.Bookmark;
+    /// <summary>
+    /// 사라진 innerPath를 오류로 볼 의도. 이어보기·북마크 외에 권 이동과 트리의 권 선택도 특정 권을 가리키므로
+    /// 첫 권으로 되돌아가면 안 된다(다음 권을 눌러도 1권에 머문다).
+    /// </summary>
+    private static bool StrictInnerPath(OpenIntent intent)
+        => intent is OpenIntent.Continue or OpenIntent.Bookmark or OpenIntent.NextVolume or OpenIntent.PreviousVolume or OpenIntent.TreeSelection;
 
     private static BookOpenException InnerMissing()
         => new(OpenErrorKind.InnerPathMissing, Loc.T("The saved book is no longer available in this source."));
@@ -396,9 +401,7 @@ public sealed class BookOpener : IBookOpener
             }
 
             progress?.Report(LoadStage.Loading);
-            var resolution = FolderAnalyzer.Resolve(start, cancellationToken: ct);
-            if (resolution.IsArchive)
-                throw new BookOpenException(OpenErrorKind.Empty, Loc.T("Folder is empty or has no supported content"));
+            var resolution = FolderAnalyzer.Resolve(start, expandedOnly: true, cancellationToken: ct);
             var bookFolder = resolution.BookPath;
             var bookInner = RelativeInner(root, bookFolder);
 
@@ -413,7 +416,7 @@ public sealed class BookOpener : IBookOpener
             {
                 var climbFrom = innerRequested ? start : bookFolder;
                 var sib = !string.Equals(climbFrom.TrimEnd('\\'), root.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)
-                    ? FolderAnalyzer.Siblings(climbFrom, stopAt: root)
+                    ? FolderAnalyzer.Siblings(climbFrom, stopAt: root, expandedOnly: true)
                     : default;
                 if (sib.Entries is { Count: >= 2 })
                 {

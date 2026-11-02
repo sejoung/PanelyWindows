@@ -272,6 +272,30 @@ public static class PageEditsEditor
         return (edits with { Bubbles = list }, list.Count - 1);
     }
 
+    /// <summary>
+    /// 추가한 풍선의 현재 index. 배열 index는 다른 풍선을 지우면 밀리므로, 비동기 작업을 건너서는 원문과 영역으로 찾는다
+    /// (둘 다 추가할 때 정해지고 바뀌지 않는다). 지워졌으면 -1.
+    /// </summary>
+    public static int FindAdded(PageEdits? edits, string recognizedSource, RectD rect)
+    {
+        if (edits is null) return -1;
+        for (var i = 0; i < edits.Bubbles.Count; i++)
+        {
+            var e = edits.Bubbles[i];
+            if (e.Added is not null && e.RecognizedSource == recognizedSource && e.Rect == rect) return i;
+        }
+        return -1;
+    }
+
+    /// <summary>
+    /// 추가할 때 시작한 번역 결과를 그 풍선에 넣는다. 번역하는 동안 풍선이 지워졌거나 원문을 고쳤으면(그쪽 재번역이 따로 돈다) null.
+    /// </summary>
+    public static PageEdits? SetAddedRetranslation(PageEdits edits, string recognizedSource, RectD rect, string target, string text)
+    {
+        var index = FindAdded(edits, recognizedSource, rect);
+        return index < 0 || edits.Bubbles[index].CorrectedSource is not null ? null : SetRetranslation(edits, index, target, text);
+    }
+
     public static PageEdits RemoveAt(PageEdits edits, int index)
     {
         var list = edits.Bubbles.ToList();

@@ -12,7 +12,7 @@ namespace Panely.Core.Library;
 public sealed class LibraryService : ILibraryService
 {
     public static readonly TimeSpan DefaultDebounce = TimeSpan.FromMilliseconds(1500);
-    private static readonly TimeSpan MaxDelay = TimeSpan.FromSeconds(6);
+    private static readonly TimeSpan DefaultMaxDelay = TimeSpan.FromSeconds(6);
 
     private readonly IDiagnostics _diagnostics;
     private readonly object _gate = new();
@@ -27,15 +27,17 @@ public sealed class LibraryService : ILibraryService
 
     public LibraryService(IDiagnostics diagnostics) : this(diagnostics, DefaultDebounce, AppPaths.Default.Root) { }
 
-    internal LibraryService(IDiagnostics diagnostics, TimeSpan debounce, string appDataRoot)
+    internal LibraryService(IDiagnostics diagnostics, TimeSpan debounce, string appDataRoot, TimeSpan? maxDelay = null)
     {
         _diagnostics = diagnostics;
         Debounce = debounce;
+        MaxDelay = maxDelay ?? DefaultMaxDelay;
         _appDataRoot = Path.GetFullPath(appDataRoot).TrimEnd('\\');
         _timer = new Timer(_ => Fire(), null, Timeout.Infinite, Timeout.Infinite);
     }
 
     internal TimeSpan Debounce { get; }
+    internal TimeSpan MaxDelay { get; }
 
     public string? RootPath { get; private set; }
 
@@ -46,10 +48,12 @@ public sealed class LibraryService : ILibraryService
     {
         lock (_gate)
         {
-            RootPath = path is null ? null : Path.GetFullPath(path).TrimEnd('\\');
+            // 드라이브 루트의 '\'는 남긴다. "Z:"는 그 드라이브의 현재 디렉터리를 뜻한다.
+            RootPath = path is null ? null : Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
             _autoRefresh = autoRefresh;
             _overflowReported = false;
             _pending.Clear();
+            _firstPendingAt = default;
             RestartWatcher();
         }
     }
@@ -122,7 +126,7 @@ public sealed class LibraryService : ILibraryService
         return Path.GetExtension(name).Length == 0;
     }
 
-    private void OnEvent(string path, string? oldPath)
+    internal void OnEvent(string path, string? oldPath)
     {
         var relevant = IsRelevant(path) || (oldPath is not null && IsRelevant(oldPath));
         if (!relevant) return;
@@ -132,7 +136,7 @@ public sealed class LibraryService : ILibraryService
             AddParent(path);
             if (oldPath is not null) AddParent(oldPath);
             var now = DateTime.UtcNow;
-            if (_pending.Count == 1 || _firstPendingAt == default) _firstPendingAt = now;
+            if (_firstPendingAt == default) _firstPendingAt = now;
             // trailing debounce, 단 연속 변경이 계속돼도 MaxDelay 안에는 알린다
             var due = now - _firstPendingAt >= MaxDelay ? TimeSpan.Zero : Debounce;
             _timer.Change(due, Timeout.InfiniteTimeSpan);
@@ -142,7 +146,7 @@ public sealed class LibraryService : ILibraryService
     private void AddParent(string path)
     {
         var parent = Path.GetDirectoryName(path);
-        if (parent is not null) _pending.Add(parent.TrimEnd('\\'));
+        if (parent is not null) _pending.Add(Path.TrimEndingDirectorySeparator(parent));
     }
 
     private void OnError(Exception ex)
